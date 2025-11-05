@@ -2,6 +2,107 @@ import json
 import re
 
 class TestManager:
+    """
+    A comprehensive test and question management system for experimental cognitive assessments.
+    
+    The TestManager class provides functionality for managing multiple test batteries including
+    Speech Emotion Recognition (SER) baseline tasks and Mental Arithmetic Test (MAT) stressor
+    tasks. It supports question loading, answer validation, and progress tracking across different
+    experimental conditions and question sets.
+    
+    Key Features:
+    - Multi-test battery management (SER baseline and MAT stressor tasks)
+    - Dynamic question set loading from JSON configuration files
+    - Intelligent answer validation with text preprocessing
+    - Progress tracking across multiple question sets and test sessions
+    - Flexible question set selection and navigation
+    - Comprehensive test availability reporting
+    
+    Attributes:
+        ser_questions (dict): Speech Emotion Recognition baseline questions
+        task_0_questions (dict): MAT practice test (subtract 5 from 20)
+        task_1_questions (dict): MAT test 1 (subtract 13 from 1,009)
+        task_2_questions (dict): MAT test 2 (subtract 17 from 1,059)
+        current_question_index (int): Current position in active question set
+        current_test_index (int): Current test battery index
+        current_ser_question_index (int): Current SER question position
+        current_ser_question_set (str): Active SER question set identifier
+        current_answer (str/int/float): Most recent answer provided
+    
+    Usage:
+        >>> manager = TestManager()
+        >>> # SER Baseline Tasks
+        >>> manager.reset_ser_baseline('ser_1')
+        >>> question = manager.get_ser_question_by_set('ser_1', 0)
+        >>> # MAT Stressor Tasks
+        >>> mat_questions = manager.get_task_questions(1)  # Task 1
+        >>> question = manager.get_next_question(1, 0)
+        >>> is_correct = manager.check_answer("996", ["996"])
+    
+    Test Structure:
+        SER Questions (Baseline):
+        - Emotional audio clips with multiple question sets (ser_1, ser_2, etc.)
+        - Used for establishing emotional baseline before stressor tasks
+        
+        MAT Questions (Stressor):
+        - Task 0: Practice test (subtract 5 from 20, starting at 20)
+        - Task 1: Main test 1 (subtract 13 from 1,009)
+        - Task 2: Main test 2 (subtract 17 from 1,059)
+    
+    JSON File Structure:
+        SER Questions (SER_questions.json):
+        {
+            "questions": {
+                "ser_1": [{"audio": "path", "question": "text", ...}],
+                "ser_2": [{"audio": "path", "question": "text", ...}]
+            }
+        }
+        
+        MAT Questions (task_N_data.json):
+        [
+            {"question": "What is 1009 - 13?", "answer": ["996"], ...},
+            {"question": "What is 996 - 13?", "answer": ["983"], ...}
+        ]
+    
+    Answer Validation:
+        - Automatic text preprocessing (lowercase, punctuation removal)
+        - Hyphen normalization for compound numbers
+        - Direct string matching against multiple correct answers
+        - Case-insensitive comparison for text responses
+        - Support for alternative answer formats
+    
+    Progress Tracking:
+        - Independent progress counters for each test type
+        - Question set switching with preserved progress
+        - Automatic bounds checking for question indices
+        - Safe navigation with null return for out-of-bounds requests
+    
+    Error Handling:
+        - Graceful handling of missing JSON configuration files
+        - Empty question set initialization as fallback
+        - Comprehensive bounds checking for array access
+        - Detailed console logging for debugging
+    
+    File Dependencies:
+        - static/test_files/SER_questions.json: SER baseline questions
+        - static/test_files/task_0_data.json: MAT practice test
+        - static/test_files/task_1_data.json: MAT test 1 questions
+        - static/test_files/task_2_data.json: MAT test 2 questions
+    
+    Dependencies:
+        - json: JSON file loading and parsing
+        - re: Regular expression operations for text preprocessing
+    
+    Thread Safety:
+        This class is not inherently thread-safe. External synchronization
+        is required for concurrent access to question indices and test state.
+    
+    Note:
+        - Question files are loaded once during initialization
+        - Missing files result in empty question sets with console warnings
+        - Answer validation is designed for both numerical and text responses
+        - Test availability can be checked before starting experimental sessions
+    """
     def __init__(self) -> None:
         print("Test Manager initialized...")
         try:

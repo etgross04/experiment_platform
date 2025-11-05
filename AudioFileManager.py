@@ -6,7 +6,73 @@ import librosa
 
 class AudioFileManager:
     """
-    The audio processor class is responsible for handling audio processing functions.
+    A comprehensive audio file management system for experimental audio data processing.
+    
+    The AudioFileManager class provides functionality for managing, processing, and organizing
+    audio files during experimental sessions. It supports audio resampling, segmentation,
+    format conversion, and file organization with robust error handling.
+    
+    Key Features:
+    - Audio file copying and organization into structured directories
+    - Audio resampling to target sample rates using librosa
+    - WAV file segmentation into user-defined duration chunks
+    - Audio data extraction as normalized numpy arrays
+    - Temporary file management and cleanup
+    - Audio duration calculation and metadata extraction
+    - Cross-platform file operations with comprehensive error handling
+    
+    Attributes:
+        recording_file (str): Path to the current recording file being processed
+        audio_folder (str): Directory path for organized audio file storage
+    
+    Usage:
+        >>> manager = AudioFileManager("temp_recording.wav", "/data/audio")
+        >>> manager.set_audio_folder("/experiment/subject_001/audio_files")
+        >>> manager.save_audio_file("2024-01-01_subject_001_task_A_trial_1.wav")
+        >>> segments = manager.split_wav_to_segments("001", "task_A", "recording.wav", segment_duration=5)
+        >>> audio_data = manager.get_audio_chunk_as_np(offset=10, duration=5, sample_rate=16000)
+        >>> duration = manager.get_audio_duration()
+    
+    File Organization:
+        Audio files are organized in a hierarchical structure:
+        subject_data/
+        ├── <experiment_name>/
+        │   └── <trial_name>/
+        │       └── <subject_folder>/
+        │           └── audio_files/
+        │               ├── original_recordings.wav
+        │               ├── resampled_files.wav
+        │               └── segmented_chunks.wav
+    
+    Audio Processing:
+        - Supports mono and stereo audio conversion
+        - Resampling using librosa with configurable target sample rates
+        - Audio normalization and format conversion (int16, float32)
+        - Segmentation with overlapping or non-overlapping windows
+        - Real-time audio chunk extraction for analysis
+    
+    Error Handling:
+        - Comprehensive exception handling for file operations
+        - Permission and access error management
+        - Graceful handling of missing files and invalid paths
+        - Detailed error logging for debugging
+    
+    Dependencies:
+        - os: File system operations
+        - numpy: Array operations and audio data manipulation
+        - wave: WAV file reading and writing
+        - shutil: High-level file operations
+        - librosa: Advanced audio processing and resampling
+    
+    Thread Safety:
+        This class is not inherently thread-safe. External synchronization
+        is required for concurrent access to the same audio files.
+    
+    Note:
+        - Audio files are processed in WAV format with support for various sample rates
+        - Temporary files are automatically managed and cleaned up
+        - Resampled files maintain original audio quality with appropriate bit depth
+        - File naming follows timestamp_id_parameter1_parameter2.wav convention
     """
     def __init__(self, recording_file, audio_save_folder) -> None:
         self._recording_file = recording_file

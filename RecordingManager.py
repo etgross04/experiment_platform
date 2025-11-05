@@ -5,10 +5,86 @@ import TimestampManager as tm
 
 class RecordingManager():
     """
-    Handles all recording logic and file read/write for audio files. Also handles
-    the setting of system audio device. All handling of audio files post recording
-    is handled in the app.py file. Audio processing is handled in the 
-    audio_processor.py file.
+    A thread-safe audio recording manager for experimental sessions and data collection.
+    
+    The RecordingManager class provides functionality for managing audio recording operations
+    during experimental sessions. It supports multi-threaded recording, audio device management,
+    real-time audio streaming, and robust error handling for audio input operations.
+    
+    Key Features:
+    - Thread-safe audio recording with PyAudio integration
+    - Dynamic audio device detection and selection
+    - Real-time audio streaming with configurable sample rates
+    - Automatic WAV file generation with proper formatting
+    - Audio system reset and recovery capabilities
+    - Timestamp tracking for recording start and end times
+    - Device validation and error handling
+    
+    Attributes:
+        recording_file (str): Path to the output WAV file for recorded audio
+        sample_rate (int): Current audio sample rate (defaults to device default)
+        device_index (int): Index of the selected audio input device
+        audio_devices (list): List of available audio input devices
+        timestamp (str): ISO timestamp when recording started
+        unix_timestamp (int): Unix timestamp when recording started
+        end_timestamp (str): ISO timestamp when recording ended
+        stream_is_active (bool): Current recording stream status
+    
+    Usage:
+        >>> manager = RecordingManager("recording.wav")
+        >>> devices = manager.get_audio_devices()
+        >>> manager.set_device(1)  # Select specific audio device
+        >>> manager.start_recording()
+        >>> # ... experiment session ...
+        >>> manager.stop_recording()
+    
+    Threading Model:
+        - Main thread: Controls recording start/stop operations
+        - Recording thread: Handles continuous audio data capture
+        - Thread synchronization using Events for safe coordination
+        - Automatic cleanup and resource management
+    
+    Audio Configuration:
+        - Format: 16-bit PCM (pyaudio.paInt16)
+        - Channels: Mono (1 channel)
+        - Sample Rate: Device default or user-specified
+        - Buffer Size: 1024 frames per buffer
+        - Output Format: WAV file with proper headers
+    
+    Device Management:
+        - Automatic detection of available input devices
+        - Device validation before recording operations
+        - Fallback to first available device if invalid selection
+        - Audio system reset capabilities for error recovery
+    
+    Error Handling:
+        - Comprehensive exception handling for audio operations
+        - Graceful degradation when devices are unavailable
+        - Timeout protection for thread operations (5 second timeout)
+        - Detailed error logging for debugging
+    
+    Thread Safety:
+        This class is designed to be thread-safe with proper synchronization
+        using threading Events for coordination between recording and control threads.
+    
+    Dependencies:
+        - threading: Thread management and synchronization
+        - pyaudio: Audio input/output operations
+        - wave: WAV file creation and formatting
+        - TimestampManager: Custom timestamp utilities
+    
+    File Output:
+        WAV files are created with the following specifications:
+        - Sample width: 16-bit
+        - Channels: 1 (mono)
+        - Frame rate: Device-specific sample rate
+        - Format: Standard WAV format compatible with most audio software
+    
+    Note:
+        - Recording operations are non-blocking with proper thread management
+        - Audio devices are automatically refreshed during initialization
+        - Stream validation ensures proper device connectivity before recording
+        - Timestamps are captured using the TimestampManager for consistency
     """
     def __init__(self, recording_file) -> None: 
         self.audio = pyaudio.PyAudio()

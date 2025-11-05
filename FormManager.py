@@ -5,6 +5,100 @@ import re
 import csv
 
 class FormManager:
+    """
+    A comprehensive form and survey management system for experimental data collection.
+    
+    The FormManager class provides functionality for managing survey forms, customizing URLs,
+    processing survey responses, and maintaining subject data during experimental sessions.
+    It supports dynamic form URL generation, CSV response processing, and JSON-based data storage.
+    
+    Key Features:
+    - Survey form loading and management from JSON configuration files
+    - Dynamic URL customization with subject ID placeholders
+    - CSV survey response extraction and validation
+    - Subject data management with email-based lookup
+    - Form URL autofilling with experimental parameters
+    - Email validation and pattern matching
+    - JSON-based persistent storage for surveys and subjects
+    
+    Attributes:
+        surveys (list): List of loaded survey configurations
+        added_surveys (list): List of dynamically added surveys
+        formatted_surveys (list): List of surveys with customized URLs
+        embed_codes (list): List of survey embed codes for integration
+    
+    Usage:
+        >>> manager = FormManager()
+        >>> manager.add_survey("Pre-Test Survey", "https://forms.google.com/...")
+        >>> url = manager.get_custom_url("Pre-Test Survey", "subject_001")
+        >>> manager.autofill_forms("subject_001")
+        >>> found = manager.find_survey_response("responses.csv", "output.csv", "user@email.com")
+        >>> manager.add_to_subject_ids("001", "John", "Doe", "john.doe@email.com")
+    
+    File Structure:
+        The manager expects the following file organization:
+        surveys/
+        ├── surveys.json          # Main survey configurations
+        ├── added_surveys.json    # Dynamically added surveys
+        └── subject_data/
+            └── subjects.json     # Subject information database
+    
+    Survey URL Customization:
+        - Supports Google Forms URL parameterization
+        - Replaces placeholder text (Sample+ID variations) with actual subject IDs
+        - Handles case-insensitive placeholder matching
+        - Maintains URL encoding for special characters
+    
+    Data Formats:
+        Survey JSON structure:
+        {
+            "surveys": [
+                {
+                    "name": "Survey Name",
+                    "url": "https://forms.google.com/..."
+                }
+            ]
+        }
+        
+        Subject JSON structure:
+        {
+            "subjects": {
+                "email@domain.com": {
+                    "subject_id": "001",
+                    "first_name": "John",
+                    "last_name": "Doe"
+                }
+            }
+        }
+    
+    CSV Processing:
+        - Extracts survey responses based on email matching
+        - Validates email format using regex patterns
+        - Supports UTF-8 encoding for international characters
+        - Creates filtered output files for specific subjects
+    
+    Error Handling:
+        - Graceful handling of missing configuration files
+        - Automatic file creation with default structures
+        - Comprehensive validation for email formats and survey existence
+        - Detailed error messaging for debugging
+    
+    Dependencies:
+        - json: JSON file operations and data serialization
+        - os: File system operations and path management
+        - re: Regular expression operations for validation
+        - csv: CSV file reading and writing operations
+    
+    Thread Safety:
+        This class is not inherently thread-safe. External synchronization
+        is required for concurrent access to survey data and file operations.
+    
+    Note:
+        - Survey URLs are expected to contain placeholder text for customization
+        - Email addresses are normalized to lowercase for consistent matching
+        - JSON files are automatically created if missing with default structures
+        - String cleaning removes special characters and converts to lowercase with underscores
+    """
     def __init__(self) -> None:
         self._surveys_file = "surveys/surveys.json"
         self._added_surveys_file = "surveys/added_surveys.json"

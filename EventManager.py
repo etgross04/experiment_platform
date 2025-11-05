@@ -10,6 +10,64 @@ import pandas as pd
 from datetime import datetime, timezone
 
 class EventManager:
+    """
+    A thread-safe event manager for streaming and recording experimental event markers.
+    
+    The EventManager class provides functionality to stream, record, and manage event markers
+    during experimental sessions. It supports real-time data streaming to HDF5 files and 
+    automatic conversion to CSV format upon stopping.
+    
+    Key Features:
+    - Real-time event marker streaming with timestamps
+    - Thread-safe data recording to HDF5 format
+    - Automatic CSV conversion for post-processing
+    - Configurable event markers and experimental conditions
+    - Safe shutdown with proper file closure
+    
+    Attributes:
+        time_started_iso (str): ISO timestamp when streaming started
+        time_started_unix (str): Unix timestamp when streaming started  
+        is_streaming (bool): Current streaming status
+        current_row (dict): Current data row being processed
+        data_folder (str): Directory path for data files
+        csv_filename (str): Path to output CSV file
+        hdf5_filename (str): Path to output HDF5 file
+        event_marker (str): Current event marker label
+        condition (str): Current experimental condition
+    
+    Usage:
+        >>> manager = EventManager()
+        >>> manager.set_data_folder("/path/to/data")
+        >>> manager.set_filenames("subject_001")
+        >>> manager.initialize_hdf5_file()
+        >>> manager.start()
+        >>> manager.event_marker = "stimulus_onset"
+        >>> manager.condition = "treatment_A"
+        >>> # ... experiment runs ...
+        >>> manager.stop()
+    
+    Thread Safety:
+        This class is designed to be thread-safe for concurrent access to event markers
+        and conditions during streaming. Data writing operations are protected by locks.
+    
+    File Formats:
+        - HDF5: Real-time structured data storage with fields:
+          * timestamp_unix: Unix timestamp
+          * timestamp_iso: ISO 8601 timestamp  
+          * event_marker: Event marker string
+          * condition: Experimental condition string
+        - CSV: Post-processing format with same field structure
+    
+    Dependencies:
+        - h5py: HDF5 file operations
+        - numpy: Array operations
+        - pandas: CSV conversion
+        - TimestampManager: Custom timestamp utilities
+    
+    Note:
+        The manager automatically registers an atexit handler to ensure proper cleanup
+        and file closure when the program terminates.
+    """
     def __init__(self):
         self.time_started_iso = None
         self.time_started_unix = None
@@ -142,9 +200,9 @@ class EventManager:
             return
         
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        self.hdf5_filename = os.path.join(self._data_folder, f"{current_date}_{subject_id}_event_marker_biometrics.h5")
+        self.hdf5_filename = os.path.join(self._data_folder, f"{current_date}_{subject_id}_event_markers.h5")
         print(f"HDF5 filename set to: {self.hdf5_filename}")
-        self.csv_filename = os.path.join(self._data_folder, f"{current_date}_{subject_id}_event_marker_biometrics.csv")
+        self.csv_filename = os.path.join(self._data_folder, f"{current_date}_{subject_id}_event_markers.csv")
         print(f"CSV filename set to: {self.csv_filename}")
 
     def initialize_hdf5_file(self):

@@ -1,14 +1,3 @@
-""" When started, the class connects to a Go Direct device via USB (if USB 
-is not connected, then it searches for the nearest GoDirect device via Bluetooth)
-and starts reading measurements from the default sensor at a period of 
-1000ms (1 sample/second). 
-
-If you want to enable specific sensors, you will need to know the sensor numbers.
-Run the example called 'gdx_getting_started_device_info.py' to get that information.
-
-Installation of the godirect package is required using 'pip3 install godirect'
-"""
-
 from godirect import GoDirect
 import asyncio
 import logging
@@ -25,6 +14,112 @@ import scipy.signal as signal
 from bleak import BleakClient, BleakError
 
 class VernierManager:
+    """
+    A comprehensive Vernier Go Direct device manager for respiratory and force sensor data collection.
+    
+    The VernierManager class provides functionality for connecting to and managing Vernier Go Direct
+    sensors during experimental sessions. It supports real-time data streaming, automatic device
+    discovery via USB/Bluetooth, and robust error handling with crash recovery capabilities.
+    
+    Key Features:
+    - Automatic Go Direct device discovery (USB priority, Bluetooth fallback)
+    - Real-time respiratory rate and force sensor data collection
+    - Thread-safe data streaming with configurable sampling rates
+    - HDF5 data storage with automatic CSV conversion
+    - Crash detection and recovery with automatic file versioning
+    - Event marker and condition tracking for experimental synchronization
+    - Asynchronous device communication with proper resource management
+    
+    Attributes:
+        device_started (bool): Current device connection status
+        running (bool): Data collection thread status
+        event_marker (str): Current experimental event marker
+        condition (str): Current experimental condition
+        data_folder (str): Directory path for respiratory data files
+        hdf5_filename (str): Path to HDF5 data file
+        csv_filename (str): Path to converted CSV data file
+    
+    Usage:
+        >>> manager = VernierManager()
+        >>> manager.set_data_folder("/data/subject_001")
+        >>> manager.set_filenames("001")
+        >>> manager.initialize_hdf5_file()
+        >>> status = manager.start()  # Connect to device
+        >>> manager.run()  # Start data collection
+        >>> manager.event_marker = "stimulus_onset"
+        >>> manager.condition = "treatment_A"
+        >>> # ... experiment runs ...
+        >>> manager.stop()
+    
+    Sensor Configuration:
+        - Sensor 1: Force sensor (Newtons)
+        - Sensor 2: Respiration Rate sensor (breaths/minute)
+        - Sampling Period: 100ms (10 Hz)
+        - Data Format: Real-time streaming with timestamp synchronization
+    
+    Data Structure:
+        HDF5/CSV columns:
+        - timestamp_unix: Unix timestamp (float64)
+        - timestamp: ISO 8601 timestamp (string)
+        - force: Force measurement in Newtons (float32)
+        - RR: Respiration rate in breaths/minute (float32)
+        - event_marker: Experimental event label (string)
+        - condition: Experimental condition (string)
+    
+    Connection Protocol:
+        1. USB connection attempted first (higher reliability)
+        2. Bluetooth Low Energy (BLE) fallback if USB unavailable
+        3. Device threshold: -100 dBm for Bluetooth discovery
+        4. Automatic sensor enablement and configuration
+    
+    Error Handling & Recovery:
+        - Automatic crash detection via device disconnection
+        - File versioning system for crash recovery (_0, _1, _2, etc.)
+        - Graceful resource cleanup on errors
+        - Thread synchronization for safe shutdown
+        - Event loop management for async operations
+    
+    Thread Safety:
+        - Main thread: Device control and management
+        - Data collection thread: Continuous sensor reading
+        - Thread synchronization using boolean flags
+        - Safe resource cleanup on thread termination
+    
+    File Management:
+        - Real-time HDF5 storage for structured data
+        - Automatic CSV conversion on stop/crash
+        - Chunked processing for large datasets (1000 rows/chunk)
+        - UTF-8 encoding for international compatibility
+    
+    Dependencies:
+        - godirect: Vernier Go Direct device communication
+        - asyncio: Asynchronous device operations
+        - h5py: HDF5 file operations
+        - pandas: CSV conversion and data manipulation
+        - numpy: Array operations and data types
+        - bleak: Bluetooth Low Energy communication
+        - TimestampManager: Custom timestamp utilities
+    
+    Device Requirements:
+        - Vernier Go Direct Force & Acceleration sensor
+        - Vernier Go Direct Respiration Monitor Belt
+        - USB connection (preferred) or Bluetooth capability
+        - Compatible with Go Direct app ecosystem
+    
+    Note:
+        - Requires 'pip install godirect' for device communication
+        - Device auto-discovery may take several seconds
+        - Crash recovery automatically preserves all collected data
+        - Event markers and conditions are synchronized with timestamps
+        - File naming follows YYYY-MM-DD_subjectID_respiratory_data_crashNum format
+        - When started, the class connects to a Go Direct device via USB (if USB 
+            is not connected, then it searches for the nearest GoDirect device via Bluetooth)
+            and starts reading measurements from the default sensor at a period of 
+            1000ms (1 sample/second).
+        - If you want to enable specific sensors, you will need to know the sensor numbers.
+            Run the example called 'gdx_getting_started_device_info.py' to get that information.
+        - Installation of the godirect package is required using 'pip3 install godirect'
+    """
     def __init__(self):
         self._device = None
         self._sensors = None

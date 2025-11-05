@@ -3,6 +3,104 @@ import os
 from datetime import datetime
 
 class SubjectManager:
+    """
+    A comprehensive subject management system for experimental data organization and CSV file operations.
+    
+    The SubjectManager class provides functionality for managing subject information, organizing
+    experimental data files, and handling CSV-based data storage during experimental sessions.
+    It supports subject registration, data appending, and file structure management with metadata tracking.
+    
+    Key Features:
+    - Subject information management with personal and experimental details
+    - Automatic CSV file creation with structured metadata headers
+    - Data appending with column filtering and validation
+    - Hierarchical file organization by experiment, trial, and subject
+    - Memory-only storage of sensitive personal information
+    - Comprehensive data loading and reset capabilities
+    
+    Attributes:
+        subject_id (str): Unique identifier for the current subject
+        experiment_name (str): Name of the current experiment
+        trial_name (str): Name of the current trial or session
+        subject_folder (str): Directory path for subject-specific data files
+        categories (list[str]): List of experimental categories or conditions
+        csv_file_path (str): Path to the subject's main data CSV file
+        PID (str): Participant ID for external systems (e.g., SONA)
+        class_name (str): Associated class or course name
+        subject_first_name (str): Subject's first name (memory-only)
+        subject_last_name (str): Subject's last name (memory-only)
+        subject_email (str): Subject's email address (memory-only)
+    
+    Usage:
+        >>> manager = SubjectManager()
+        >>> manager.experiment_name = "Speech_Study"
+        >>> manager.trial_name = "Session_1"
+        >>> manager.categories = ["condition_A", "condition_B"]
+        >>> subject_info = {
+        ...     "subject_id": "001",
+        ...     "pid": "SONA_123",
+        ...     "sona_class": "PSYC101",
+        ...     "subject_dir": "/data/subjects/001"
+        ... }
+        >>> manager.set_subject(subject_info)
+        >>> data = {"Timestamp": "2024-01-01T10:00:00", "Event_Marker": "stimulus_onset"}
+        >>> manager.append_data(data)
+    
+    File Structure:
+        Subject data is organized in the following hierarchy:
+        subject_data/
+        ├── <experiment_name>/
+        │   └── <trial_name>/
+        │       └── <subject_id>/
+        │           ├── YYYY-MM-DD_experiment_trial_subject.csv
+        │           ├── audio_files/
+        │           └── other_data/
+    
+    CSV Format:
+        The generated CSV files include:
+        - Metadata Header (6 rows):
+          * Experiment Name
+          * Trial Name
+          * Subject ID
+          * Categories
+          * PID
+          * Class Name
+        - Data Columns:
+          * Unix_Timestamp: Unix timestamp
+          * Timestamp: ISO 8601 timestamp
+          * Time_Stopped: End time marker
+          * Event_Marker: Experimental event label
+          * Condition: Experimental condition
+          * Audio_File: Associated audio file path
+          * Transcription: Text transcription data
+    
+    Data Privacy:
+        - Personal information (name, email) is stored only in memory
+        - No personal data is written to persistent files
+        - Subject ID serves as the only persistent identifier
+        - Automatic cleanup on reset operations
+    
+    Error Handling:
+        - Validation of experiment and trial names before subject creation
+        - Graceful handling of missing CSV files
+        - File existence checks before data operations
+        - Comprehensive error messages for debugging
+    
+    Dependencies:
+        - csv: CSV file reading and writing operations
+        - os: File system operations and directory management
+        - datetime: Timestamp generation for file naming
+    
+    Thread Safety:
+        This class is not inherently thread-safe. External synchronization
+        is required for concurrent access to file operations and data management.
+    
+    Note:
+        - CSV files are created with UTF-8 encoding for international character support
+        - Data appending filters out empty values and irrelevant columns
+        - File paths use cross-platform compatible separators
+        - Metadata is automatically included in all generated CSV files
+    """
     def __init__(self) -> None:
         self._subject_id = None
         self.csv_file_path = None

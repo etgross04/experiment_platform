@@ -18,6 +18,102 @@ speech_key = os.getenv("AZURE_SPEECH_KEY")
 region = os.getenv("AZURE_SPEECH_REGION")
 
 class TranscriptionManager:
+    """
+    A high-performance speech-to-text transcription manager using Azure's Fast Transcription API.
+    
+    The TranscriptionManager class provides functionality for converting audio recordings to text
+    during experimental sessions. It utilizes Azure's Fast Transcription API for sub-2-second
+    response times and includes specialized mathematical answer parsing for numerical responses.
+    
+    Key Features:
+    - Ultra-fast transcription using Azure's Fast Transcription API (30min → <1min)
+    - Real-time speech-to-text conversion with sub-2-second response times
+    - Mathematical answer extraction and parsing from speech
+    - Word-to-number conversion for spoken numerical responses
+    - Confidence scoring and error handling with detailed metadata
+    - Thread-safe operations with proper resource management
+    - Comprehensive error recovery and timeout protection
+    
+    Attributes:
+        azure_key (str): Azure Cognitive Services subscription key
+        azure_region (str): Azure service region (e.g., 'eastus', 'westus2')
+        endpoint (str): Complete Azure Fast Transcription API endpoint URL
+        result (dict): Most recent transcription result with metadata
+        lock (threading.Lock): Thread synchronization for concurrent access
+    
+    Usage:
+        >>> manager = TranscriptionManager()
+        >>> result = manager.transcribe("audio_response.wav")
+        >>> if result["success"]:
+        ...     print(f"Text: {result['text']}")
+        ...     print(f"Parsed Answer: {result['answer']}")
+        ...     print(f"Processing Time: {result['processing_time']:.3f}s")
+    
+    API Configuration:
+        - Endpoint: Azure Fast Transcription API (2024-05-15-preview)
+        - Language: English (en-US) with multi-locale support
+        - Audio Format: WAV files (other formats supported)
+        - Max File Size: 300 MB
+        - Max Duration: 2 hours
+        - Timeout: 30 seconds for API requests
+    
+    Response Structure:
+        Transcription results include:
+        {
+            "success": bool,           # Operation success status
+            "text": str,              # Transcribed text
+            "answer": str/int/float,  # Parsed mathematical answer
+            "confidence": float,      # Transcription confidence (0.0-1.0)
+            "processing_time": float, # API response time in seconds
+            "source": str,           # "azure_fast_transcription"
+            "error": str             # Error message if failed
+        }
+    
+    Mathematical Parsing:
+        - Direct number extraction: "42", "-3.14", "0.5"
+        - Word-to-number conversion: "twenty-one" → 21, "negative five" → -5
+        - Compound numbers: "forty two" → 42, "one hundred" → 100
+        - Decimal handling: "three point five" → 3.5
+        - Range: 0-100 with negative number support
+    
+    Error Handling:
+        - HTTP status code validation and detailed error reporting
+        - Request timeout protection (30-second limit)
+        - Credential validation on initialization
+        - Graceful fallback for parsing failures
+        - Comprehensive exception handling with metadata preservation
+    
+    Performance Optimization:
+        - Multipart form-data upload for efficient file transfer
+        - Streaming audio processing without local storage requirements
+        - Minimal memory footprint with automatic resource cleanup
+        - Connection pooling for repeated transcription requests
+    
+    Dependencies:
+        - azure.cognitiveservices.speech: Azure Speech SDK
+        - requests: HTTP client for API communication
+        - json: JSON data serialization and parsing
+        - re: Regular expression operations for text parsing
+        - dotenv: Environment variable management
+        - pathlib: Modern path handling
+    
+    Environment Requirements:
+        Required environment variables in .env file:
+        - AZURE_SPEECH_KEY: Azure Cognitive Services subscription key
+        - AZURE_SPEECH_REGION: Azure service region identifier
+    
+    Thread Safety:
+        This class uses threading locks for safe concurrent access to results.
+        Multiple transcription requests can be processed simultaneously with
+        proper synchronization of shared resources.
+    
+    Note:
+        - Requires active Azure Cognitive Services subscription
+        - API usage is metered and billed per request
+        - Fast Transcription API provides significantly better performance than standard SDK
+        - Mathematical parsing is optimized for experimental response collection
+        - Connection testing available via test_connection() method
+    """
     def __init__(self):
         """
         Fast Transcription Manager using Azure's Fast Transcription API.
