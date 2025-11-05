@@ -507,7 +507,13 @@ def list_experiments():
                         'created_at': created_at,
                         'estimated_duration': experiment.get('estimated_duration', 0),
                         'procedure_count': len(experiment.get('procedures', [])),
-                        'procedures': [proc.get('name') for proc in experiment.get('procedures', [])]
+                        'procedures': [
+                            {
+                                'name': proc.get('name'),
+                                'duration': proc.get('duration', 0)
+                            } 
+                            for proc in experiment.get('procedures', [])
+                        ]
                     })
         
         experiments.sort(key=lambda x: x.get('created_at', ''), reverse=True)

@@ -16,6 +16,7 @@ function ExperimentRunner({ onBack }) {
       const response = await fetch('/api/experiments');
       const data = await response.json();
       setExperiments(data);
+      console.log(data);        // ✅ Better - shows what you just fetched
     } catch (error) {
       console.error('Error loading experiments:', error);
     }
@@ -127,11 +128,11 @@ function ExperimentRunner({ onBack }) {
               <div className="experiment-procedures-section">
                 <h4>Experiment Procedures</h4>
                 <div className="procedures-simple-list">
-                  {selectedExperiment.procedures?.map((procedureName, index) => (
+                  {selectedExperiment.procedures?.map((procedure, index) => (
                     <div key={index} className="procedure-simple-item">
                       <span className="procedure-step">{index + 1}.</span>
-                      <span className="procedure-simple-name">{procedureName}</span>
-                      <span className="procedure-simple-duration">-- min</span>
+                      <span className="procedure-simple-name">{typeof procedure === 'string' ? procedure : procedure.name}</span>
+                      <span className="procedure-simple-duration">{typeof procedure === 'object' ? `${procedure.duration} min` : ' -- min'}</span>
                     </div>
                   ))}
                 </div>

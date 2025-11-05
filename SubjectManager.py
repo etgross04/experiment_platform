@@ -54,7 +54,8 @@ class SubjectManager:
         │       └── <subject_id>/
         │           ├── YYYY-MM-DD_experiment_trial_subject.csv
         │           ├── audio_files/
-        │           └── other_data/
+        │           ├── emotibit_data/
+        │           └── respiration_data/
     
     CSV Format:
         The generated CSV files include:
