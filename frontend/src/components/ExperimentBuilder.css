@@ -745,6 +745,8 @@
   gap: 0.5rem;
   border-bottom: 1px solid #e2e8f0;
   overflow-x: auto;
+  min-height: 60px;  /* ADD THIS - forces minimum height */
+  flex-shrink: 0;    /* ADD THIS - prevents flexbox from compressing it */
 }
 .breadcrumb {
   display: flex;

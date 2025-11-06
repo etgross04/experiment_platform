@@ -1037,6 +1037,7 @@ function ProcedureWizard({ procedure, onClose, onSave, config }) {
               stepId={currentStepData.id}
               procedureId={procedure.id}
               value={configuration[currentStepData.id]}
+              configuration={configuration} 
               onChange={(data) => updateConfiguration(currentStepData.id, data)}
             />
           </div>
@@ -1070,7 +1071,7 @@ function ProcedureWizard({ procedure, onClose, onSave, config }) {
   );
 }
 
-function WizardStepContent({ stepId, procedureId, value, onChange }) {
+function WizardStepContent({ stepId, procedureId, value, configuration, onChange }) {
   const [formData, setFormData] = useState(value || {});
 
   const handleConsentUpload = async (e) => {
@@ -1160,7 +1161,7 @@ function WizardStepContent({ stepId, procedureId, value, onChange }) {
 
     case 'survey-link':
       if (procedureId === 'demographics') {
-        const isGoogleEmbedded = formData['survey-method']?.surveyMethod === 'google_embedded';
+        const isGoogleEmbedded = configuration['survey-method']?.surveyMethod === 'google_embedded';
         
         return (
           <div className="form-group">
@@ -1270,7 +1271,7 @@ function WizardStepContent({ stepId, procedureId, value, onChange }) {
 
     case 'setup-instructions':
       if (procedureId === 'demographics') {
-        const isGoogleEmbedded = formData['survey-method']?.surveyMethod === 'google_embedded';
+        const isGoogleEmbedded = configuration['survey-method']?.surveyMethod === 'google_embedded';
         
         if (!isGoogleEmbedded) {
           return (
