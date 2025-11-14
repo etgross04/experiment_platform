@@ -5,87 +5,88 @@ import TimestampManager as tm
 
 class RecordingManager():
     """
-    A thread-safe audio recording manager for experimental sessions and data collection.
+    RecordingManager - Audio Recording Contract for LLM Integration
     
-    The RecordingManager class provides functionality for managing audio recording operations
-    during experimental sessions. It supports multi-threaded recording, audio device management,
-    real-time audio streaming, and robust error handling for audio input operations.
+    PURPOSE:
+    Thread-safe audio recording manager for experimental sessions and data collection.
+    Provides reliable audio capture with device management and error handling.
     
-    Key Features:
-    - Thread-safe audio recording with PyAudio integration
-    - Dynamic audio device detection and selection
-    - Real-time audio streaming with configurable sample rates
-    - Automatic WAV file generation with proper formatting
-    - Audio system reset and recovery capabilities
-    - Timestamp tracking for recording start and end times
-    - Device validation and error handling
+    CONTRACT SPECIFICATION:
     
-    Attributes:
-        recording_file (str): Path to the output WAV file for recorded audio
-        sample_rate (int): Current audio sample rate (defaults to device default)
-        device_index (int): Index of the selected audio input device
-        audio_devices (list): List of available audio input devices
-        timestamp (str): ISO timestamp when recording started
-        unix_timestamp (int): Unix timestamp when recording started
-        end_timestamp (str): ISO timestamp when recording ended
-        stream_is_active (bool): Current recording stream status
+    INITIALIZATION:
+    - REQUIRED: recording_file (str) - Output WAV file path
+    - SETS: sample_rate to device default, initializes threading events
+    - CREATES: PyAudio instance, fetches available audio devices
+    - GUARANTEES: Manager ready for recording operations
     
-    Usage:
-        >>> manager = RecordingManager("recording.wav")
-        >>> devices = manager.get_audio_devices()
-        >>> manager.set_device(1)  # Select specific audio device
-        >>> manager.start_recording()
-        >>> # ... experiment session ...
-        >>> manager.stop_recording()
+    CORE OPERATIONS:
     
-    Threading Model:
-        - Main thread: Controls recording start/stop operations
-        - Recording thread: Handles continuous audio data capture
-        - Thread synchronization using Events for safe coordination
-        - Automatic cleanup and resource management
+    start_recording():
+    - PRECONDITION: Manager initialized, valid audio device available
+    - BEHAVIOR: Creates recording thread, sets timestamps, begins audio capture
+    - POSTCONDITION: stream_is_active=True, recording thread running
+    - THREAD SAFETY: Uses Event synchronization for thread coordination
     
-    Audio Configuration:
-        - Format: 16-bit PCM (pyaudio.paInt16)
-        - Channels: Mono (1 channel)
-        - Sample Rate: Device default or user-specified
-        - Buffer Size: 1024 frames per buffer
-        - Output Format: WAV file with proper headers
+    stop_recording():
+    - PRECONDITION: Recording currently active
+    - BEHAVIOR: Signals stop, joins thread, saves WAV file, sets end timestamp
+    - POSTCONDITION: stream_is_active=False, audio saved to file
+    - TIMEOUT: 5 second thread join timeout prevents hanging
     
-    Device Management:
-        - Automatic detection of available input devices
-        - Device validation before recording operations
-        - Fallback to first available device if invalid selection
-        - Audio system reset capabilities for error recovery
+    DEVICE MANAGEMENT:
     
-    Error Handling:
-        - Comprehensive exception handling for audio operations
-        - Graceful degradation when devices are unavailable
-        - Timeout protection for thread operations (5 second timeout)
-        - Detailed error logging for debugging
+    set_device(index):
+    - VALIDATES: Device index exists in available devices
+    - UPDATES: device_index, sample_rate for selected device
+    - ERROR HANDLING: Logs invalid indices, maintains current device
     
-    Thread Safety:
-        This class is designed to be thread-safe with proper synchronization
-        using threading Events for coordination between recording and control threads.
+    fetch_audio_devices():
+    - RETURNS: List of dict {'index': int, 'name': str} for input devices
+    - FILTERS: Only devices with maxInputChannels > 0
+    - ERROR HANDLING: Returns empty list if PyAudio fails
     
-    Dependencies:
-        - threading: Thread management and synchronization
-        - pyaudio: Audio input/output operations
-        - wave: WAV file creation and formatting
-        - TimestampManager: Custom timestamp utilities
+    AUDIO SPECIFICATIONS:
+    - FORMAT: 16-bit PCM (pyaudio.paInt16)
+    - CHANNELS: 1 (mono)
+    - BUFFER: 1024 frames per buffer
+    - OUTPUT: Standard WAV format
     
-    File Output:
-        WAV files are created with the following specifications:
-        - Sample width: 16-bit
-        - Channels: 1 (mono)
-        - Frame rate: Device-specific sample rate
-        - Format: Standard WAV format compatible with most audio software
+    PROPERTIES (READ/WRITE):
+    - recording_file: str - WAV output path
+    - timestamp: str - ISO recording start time
+    - unix_timestamp: int - Unix recording start time
+    - end_timestamp: str - ISO recording end time
+    - stream_is_active: bool - Current recording status
     
-    Note:
-        - Recording operations are non-blocking with proper thread management
-        - Audio devices are automatically refreshed during initialization
-        - Stream validation ensures proper device connectivity before recording
-        - Timestamps are captured using the TimestampManager for consistency
+    ERROR HANDLING GUARANTEES:
+    - Audio stream errors: Graceful degradation, detailed logging
+    - Invalid devices: Automatic fallback to first available device
+    - Thread timeouts: 5 second limit prevents deadlocks
+    - File write errors: Exception logging, operation continues
+    
+    THREAD SAFETY CONTRACT:
+    - recording_started_event: Signals recording thread is capturing
+    - stream_ready_event: Signals audio stream is open and ready
+    - stop_event: Signals recording thread should terminate
+    - All operations synchronized using threading.Event objects
+    
+    RESOURCE MANAGEMENT:
+    - PyAudio streams: Automatically closed on stop/error
+    - Threads: Properly joined with timeout protection
+    - WAV files: Atomic write operations with proper headers
+    
+    INTEGRATION POINTS:
+    - TimestampManager: External timestamp utility dependency
+    - File system: WAV file creation at specified path
+    - Audio hardware: Direct interface through PyAudio
+    
+    FAILURE MODES:
+    - No audio devices: Manager initializes but recording fails gracefully
+    - Device disconnection: Error logged, recording stops safely
+    - File write failure: Audio lost but system remains stable
+    - Thread deadlock: Timeout mechanisms prevent infinite waits
     """
+    
     def __init__(self, recording_file) -> None: 
         self.audio = pyaudio.PyAudio()
         self.sample_rate = int(self.audio.get_default_input_device_info()['defaultSampleRate'])

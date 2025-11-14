@@ -3,105 +3,92 @@ import re
 
 class TestManager:
     """
-    A comprehensive test and question management system for experimental cognitive assessments.
+    TestManager: Experimental Cognitive Assessment System
     
-    The TestManager class provides functionality for managing multiple test batteries including
-    Speech Emotion Recognition (SER) baseline tasks and Mental Arithmetic Test (MAT) stressor
-    tasks. It supports question loading, answer validation, and progress tracking across different
-    experimental conditions and question sets.
+    PURPOSE:
+    Manages Speech Emotion Recognition (SER) baseline and Mental Arithmetic Test (MAT) 
+    stressor tasks for cognitive experiments. Handles question loading, answer validation,
+    and progress tracking across multiple test batteries.
     
-    Key Features:
-    - Multi-test battery management (SER baseline and MAT stressor tasks)
-    - Dynamic question set loading from JSON configuration files
-    - Intelligent answer validation with text preprocessing
-    - Progress tracking across multiple question sets and test sessions
-    - Flexible question set selection and navigation
-    - Comprehensive test availability reporting
+    RESPONSIBILITIES:
+    - Load and manage question sets from JSON files
+    - Validate answers with text normalization
+    - Track progress across multiple test sessions
+    - Provide question set navigation and selection
+    - Report test availability and configuration
     
+    DATA STRUCTURE:
     Attributes:
-        ser_questions (dict): Speech Emotion Recognition baseline questions
-        task_0_questions (dict): MAT practice test (subtract 5 from 20)
-        task_1_questions (dict): MAT test 1 (subtract 13 from 1,009)
-        task_2_questions (dict): MAT test 2 (subtract 17 from 1,059)
-        current_question_index (int): Current position in active question set
-        current_test_index (int): Current test battery index
-        current_ser_question_index (int): Current SER question position
-        current_ser_question_set (str): Active SER question set identifier
-        current_answer (str/int/float): Most recent answer provided
+        _ser_questions: dict - SER baseline questions loaded from SER_questions.json
+        _task_0_questions: dict - MAT practice (subtract 5 from 20)
+        _task_1_questions: dict - MAT test 1 (subtract 13 from 1,009)
+        _task_2_questions: dict - MAT test 2 (subtract 17 from 1,059)
+        _current_question_index: int - Position in current question set
+        _current_test_index: int - Current test battery index
+        _current_ser_question_index: int - Position in SER questions
+        _current_ser_question_set: str - Active SER set (e.g., 'ser_1')
+        _current_answer: any - Most recently provided answer
     
-    Usage:
-        >>> manager = TestManager()
-        >>> # SER Baseline Tasks
-        >>> manager.reset_ser_baseline('ser_1')
-        >>> question = manager.get_ser_question_by_set('ser_1', 0)
-        >>> # MAT Stressor Tasks
-        >>> mat_questions = manager.get_task_questions(1)  # Task 1
-        >>> question = manager.get_next_question(1, 0)
-        >>> is_correct = manager.check_answer("996", ["996"])
+    FILE REQUIREMENTS:
+    - static/test_files/SER_questions.json: {"questions": {"ser_1": [...], ...}}
+    - static/test_files/task_0_data.json: [{"question": str, "answer": [str], ...}, ...]
+    - static/test_files/task_1_data.json: [{"question": str, "answer": [str], ...}, ...]
+    - static/test_files/task_2_data.json: [{"question": str, "answer": [str], ...}, ...]
     
-    Test Structure:
-        SER Questions (Baseline):
-        - Emotional audio clips with multiple question sets (ser_1, ser_2, etc.)
-        - Used for establishing emotional baseline before stressor tasks
+    INITIALIZATION:
+    INPUT: None
+    OUTPUT: None
+    EFFECTS: Loads all JSON files, initializes counters to 0, prints status messages
+    ERRORS: Missing files → empty dict + warning print (does not raise exception)
+    
+    KEY METHODS:
+    
+    get_task_questions(index: int) -> dict|None
+        INPUT: index (0=practice, 1=test1, 2=test2)
+        OUTPUT: Question dict or None if index out of range
         
-        MAT Questions (Stressor):
-        - Task 0: Practice test (subtract 5 from 20, starting at 20)
-        - Task 1: Main test 1 (subtract 13 from 1,009)
-        - Task 2: Main test 2 (subtract 17 from 1,059)
-    
-    JSON File Structure:
-        SER Questions (SER_questions.json):
-        {
-            "questions": {
-                "ser_1": [{"audio": "path", "question": "text", ...}],
-                "ser_2": [{"audio": "path", "question": "text", ...}]
-            }
-        }
+    get_ser_question_by_set(question_set: str, index: int) -> dict|None
+        INPUT: question_set name, question index
+        OUTPUT: Question dict or None if set/index invalid
         
-        MAT Questions (task_N_data.json):
-        [
-            {"question": "What is 1009 - 13?", "answer": ["996"], ...},
-            {"question": "What is 996 - 13?", "answer": ["983"], ...}
-        ]
+    check_answer(transcription: str, correct_answers: list[str]) -> bool
+        INPUT: User's transcription, list of acceptable answers
+        OUTPUT: True if match found, False otherwise
+        PREPROCESSING: lowercase, remove punctuation, normalize hyphens
+        MATCHING: Direct string match or hyphen-normalized match
+        
+    reset_ser_baseline(question_set: str = 'ser_1') -> None
+        INPUT: Question set identifier
+        EFFECTS: Sets current_ser_question_index to 0, updates current_ser_question_set
+        
+    get_available_mat_sets() -> dict
+        OUTPUT: Dict with keys 'mat_practice', 'mat_1', 'mat_2'
+        STRUCTURE: {set_id: {'name': str, 'available': bool, 'question_count': int}}
+        
+    get_mat_set_by_id(set_id: str) -> dict|None
+        INPUT: 'mat_practice', 'mat_1', or 'mat_2'
+        OUTPUT: Question set dict or None if invalid ID
     
-    Answer Validation:
-        - Automatic text preprocessing (lowercase, punctuation removal)
-        - Hyphen normalization for compound numbers
-        - Direct string matching against multiple correct answers
-        - Case-insensitive comparison for text responses
-        - Support for alternative answer formats
+    INVARIANTS:
+    - All index properties are non-negative integers
+    - Question dicts are empty {} if files not found, never None
+    - Answer validation always preprocesses text before comparison
+    - Out-of-bounds question requests return None, not error
     
-    Progress Tracking:
-        - Independent progress counters for each test type
-        - Question set switching with preserved progress
-        - Automatic bounds checking for question indices
-        - Safe navigation with null return for out-of-bounds requests
+    CONSTRAINTS:
+    - Not thread-safe: external synchronization required for concurrent access
+    - Files loaded once at init; changes to JSON files require new instance
+    - Answer validation case-insensitive and punctuation-insensitive
     
-    Error Handling:
-        - Graceful handling of missing JSON configuration files
-        - Empty question set initialization as fallback
-        - Comprehensive bounds checking for array access
-        - Detailed console logging for debugging
+    USAGE PATTERNS:
+    # SER baseline flow
+    manager.reset_ser_baseline('ser_1')
+    q = manager.get_ser_question_by_set('ser_1', manager.current_ser_question_index)
+    manager.current_ser_question_index += 1
     
-    File Dependencies:
-        - static/test_files/SER_questions.json: SER baseline questions
-        - static/test_files/task_0_data.json: MAT practice test
-        - static/test_files/task_1_data.json: MAT test 1 questions
-        - static/test_files/task_2_data.json: MAT test 2 questions
-    
-    Dependencies:
-        - json: JSON file loading and parsing
-        - re: Regular expression operations for text preprocessing
-    
-    Thread Safety:
-        This class is not inherently thread-safe. External synchronization
-        is required for concurrent access to question indices and test state.
-    
-    Note:
-        - Question files are loaded once during initialization
-        - Missing files result in empty question sets with console warnings
-        - Answer validation is designed for both numerical and text responses
-        - Test availability can be checked before starting experimental sessions
+    # MAT stressor flow
+    questions = manager.get_task_questions(1)
+    is_correct = manager.check_answer(user_input, questions[0]['answer'])
     """
     def __init__(self) -> None:
         print("Test Manager initialized...")

@@ -4,103 +4,99 @@ from datetime import datetime
 
 class SubjectManager:
     """
-    A comprehensive subject management system for experimental data organization and CSV file operations.
+    CONTRACT: SubjectManager
     
-    The SubjectManager class provides functionality for managing subject information, organizing
-    experimental data files, and handling CSV-based data storage during experimental sessions.
-    It supports subject registration, data appending, and file structure management with metadata tracking.
+    PURPOSE:
+      Central authority for registering a subject within an experiment/trial context and
+      managing the lifecycle of a per‑subject CSV data file with structured metadata header rows.
     
-    Key Features:
-    - Subject information management with personal and experimental details
-    - Automatic CSV file creation with structured metadata headers
-    - Data appending with column filtering and validation
-    - Hierarchical file organization by experiment, trial, and subject
-    - Memory-only storage of sensitive personal information
-    - Comprehensive data loading and reset capabilities
+    SCOPE:
+      - Subject identity (persistent: subject_id; transient: name/email)
+      - Experiment/trial contextualization
+      - Controlled creation and appending of CSV rows
+      - In‑memory privacy for personal fields
     
-    Attributes:
-        subject_id (str): Unique identifier for the current subject
-        experiment_name (str): Name of the current experiment
-        trial_name (str): Name of the current trial or session
-        subject_folder (str): Directory path for subject-specific data files
-        categories (list[str]): List of experimental categories or conditions
-        csv_file_path (str): Path to the subject's main data CSV file
-        PID (str): Participant ID for external systems (e.g., SONA)
-        class_name (str): Associated class or course name
-        subject_first_name (str): Subject's first name (memory-only)
-        subject_last_name (str): Subject's last name (memory-only)
-        subject_email (str): Subject's email address (memory-only)
+    DATA MODEL:
+      Metadata (first 6 rows, fixed order):
+        1. Experiment Name
+        2. Trial Name
+        3. Subject ID
+        4. Categories
+        5. PID
+        6. Class Name
+      Data columns (self.headers):
+        ['Unix_Timestamp','Timestamp','Time_Stopped','Event_Marker',
+         'Condition','Audio_File','Transcription']
     
-    Usage:
-        >>> manager = SubjectManager()
-        >>> manager.experiment_name = "Speech_Study"
-        >>> manager.trial_name = "Session_1"
-        >>> manager.categories = ["condition_A", "condition_B"]
-        >>> subject_info = {
-        ...     "subject_id": "001",
-        ...     "pid": "SONA_123",
-        ...     "sona_class": "PSYC101",
-        ...     "subject_dir": "/data/subjects/001"
-        ... }
-        >>> manager.set_subject(subject_info)
-        >>> data = {"Timestamp": "2024-01-01T10:00:00", "Event_Marker": "stimulus_onset"}
-        >>> manager.append_data(data)
+    REQUIRED PRECONDITIONS BEFORE set_subject():
+      - experiment_name is a non-empty str
+      - trial_name is a non-empty str
+      - subject_info contains keys: subject_id, pid, sona_class, subject_dir
+        (missing keys raise KeyError externally or break execution)
     
-    File Structure:
-        Subject data is organized in the following hierarchy:
-        subject_data/
-        ├── <experiment_name>/
-        │   └── <trial_name>/
-        │       └── <subject_id>/
-        │           ├── YYYY-MM-DD_experiment_trial_subject.csv
-        │           ├── audio_files/
-        │           ├── emotibit_data/
-        │           └── respiration_data/
+    SIDE EFFECTS:
+      - Creates subject directory if absent
+      - Creates a CSV file named: YYYY-MM-DD_<experiment>_<trial>_<subject_id>.csv
+      - Writes metadata + header row on first creation
+      - Appends filtered data rows on append_data()
     
-    CSV Format:
-        The generated CSV files include:
-        - Metadata Header (6 rows):
-          * Experiment Name
-          * Trial Name
-          * Subject ID
-          * Categories
-          * PID
-          * Class Name
-        - Data Columns:
-          * Unix_Timestamp: Unix timestamp
-          * Timestamp: ISO 8601 timestamp
-          * Time_Stopped: End time marker
-          * Event_Marker: Experimental event label
-          * Condition: Experimental condition
-          * Audio_File: Associated audio file path
-          * Transcription: Text transcription data
+    APPEND BEHAVIOR (append_data):
+      - Accepts dict
+      - Filters to known headers; empty-string values discarded
+      - Writes a single ordered row aligned with self.headers (missing keys => "")
+      - Fails gracefully if CSV not initialized (prints message, no exception)
     
-    Data Privacy:
-        - Personal information (name, email) is stored only in memory
-        - No personal data is written to persistent files
-        - Subject ID serves as the only persistent identifier
-        - Automatic cleanup on reset operations
+    LOAD BEHAVIOR (load_data):
+      - Returns list[dict] from DictReader (metadata rows excluded automatically)
+      - Requires existing csv_file_path else ValueError
     
-    Error Handling:
-        - Validation of experiment and trial names before subject creation
-        - Graceful handling of missing CSV files
-        - File existence checks before data operations
-        - Comprehensive error messages for debugging
+    RESET BEHAVIOR:
+      - reset_subject(): clears subject_id and csv reference only
+      - reset(): full state purge (all experiment, trial, personal, category fields)
     
-    Dependencies:
-        - csv: CSV file reading and writing operations
-        - os: File system operations and directory management
-        - datetime: Timestamp generation for file naming
+    PRIVACY GUARANTEE:
+      - subject_first_name, subject_last_name, subject_email never serialized to disk
+      - Only subject_id used for persistence
     
-    Thread Safety:
-        This class is not inherently thread-safe. External synchronization
-        is required for concurrent access to file operations and data management.
+    ERROR CONTRACT:
+      - set_subject(): raises ValueError if experiment/trial unset
+      - load_data(): raises ValueError if csv_file_path missing
+      - append_data(): prints diagnostic if file absent or malformed; no exception
+      - No silent overwrites of existing CSV content; creation only if file absent
     
-    Note:
-        - CSV files are created with UTF-8 encoding for international character support
-        - Data appending filters out empty values and irrelevant columns
-        - File paths use cross-platform compatible separators
-        - Metadata is automatically included in all generated CSV files
+    THREAD SAFETY:
+      - Not thread-safe; external synchronization required for concurrent calls
+    
+    IMMUTABILITY / MUTATION NOTES:
+      - Attributes are mutable via property setters until reset()/reset_subject()
+    
+    ENCODING / PORTABILITY:
+      - CSV written UTF-8 with newline=''
+      - Uses os.path.join for cross-platform paths
+    
+    NON-FUNCTIONAL:
+      - Designed for small to moderate experimental session logs
+      - No streaming / incremental flush optimization
+    
+    IMPLEMENTATION ASSUMPTIONS:
+      - categories may be None or list[str]; serialized via str() in metadata
+      - Caller responsible for time value generation inside appended data
+    
+    EXTENSION POINTS:
+      - Additional headers may be appended by modifying self.headers before set_subject()
+      - Validation layer can be wrapped around append_data() externally
+    
+    NO GUARANTEES:
+      - Does not validate semantic correctness of data values
+      - Does not enforce uniqueness of subject_id across sessions
+    
+    USAGE MINIMUM:
+      1. Instantiate
+      2. Set experiment_name, trial_name, categories (optional)
+      3. Call set_subject(subject_info)
+      4. Call append_data(row_dict) as needed
+      5. load_data() for retrieval
+      6. reset()/reset_subject() for lifecycle management
     """
     def __init__(self) -> None:
         self._subject_id = None

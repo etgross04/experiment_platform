@@ -15,110 +15,127 @@ from bleak import BleakClient, BleakError
 
 class VernierManager:
     """
-    A comprehensive Vernier Go Direct device manager for respiratory and force sensor data collection.
+    CONTRACT: VernierManager
     
-    The VernierManager class provides functionality for connecting to and managing Vernier Go Direct
-    sensors during experimental sessions. It supports real-time data streaming, automatic device
-    discovery via USB/Bluetooth, and robust error handling with crash recovery capabilities.
+    1. Purpose
+       Manage Vernier Go Direct respiratory (Respiration Rate) and force sensor acquisition,
+       persist streamed data to HDF5, and export to CSV on stop/reset.
     
-    Key Features:
-    - Automatic Go Direct device discovery (USB priority, Bluetooth fallback)
-    - Real-time respiratory rate and force sensor data collection
-    - Thread-safe data streaming with configurable sampling rates
-    - HDF5 data storage with automatic CSV conversion
-    - Crash detection and recovery with automatic file versioning
-    - Event marker and condition tracking for experimental synchronization
-    - Asynchronous device communication with proper resource management
+    2. Lifecycle (required call order)
+       a. set_data_folder(subject_folder)            # creates /respiratory_data subfolder
+       b. set_filenames(subject_id)                  # prepares file names (crash index appended)
+       c. initialize_hdf5_file()                     # opens/creates HDF5 + dataset
+       d. start()                                    # discovers + opens device (USB preferred, BLE fallback)
+       e. run()                                      # starts background data collection thread
+       f. (optional) mutate event_marker / condition during run
+       g. stop() or reset()                          # stops streaming, closes device, closes file, converts to CSV
     
-    Attributes:
-        device_started (bool): Current device connection status
-        running (bool): Data collection thread status
-        event_marker (str): Current experimental event marker
-        condition (str): Current experimental condition
-        data_folder (str): Directory path for respiratory data files
-        hdf5_filename (str): Path to HDF5 data file
-        csv_filename (str): Path to converted CSV data file
+    3. Responsibilities
+       - Device discovery (USB first, BLE fallback; threshold -100 dBm).
+       - Enable sensors [1,2] (Force, Respiration Rate).
+       - Periodic sampling at 100 ms (10 Hz) after start().
+       - Threaded data collection with safe termination flags.
+       - Append-only structured HDF5 dataset with dynamic resize.
+       - CSV conversion (chunked, 1000 rows per chunk).
+       - Crash detection (device.read() fails or exception).
+       - Crash file versioning (_0, _1, _2 ...).
+       - Timestamping (unix float + ISO 8601).
+       - Event marker + condition tagging per row.
     
-    Usage:
-        >>> manager = VernierManager()
-        >>> manager.set_data_folder("/data/subject_001")
-        >>> manager.set_filenames("001")
-        >>> manager.initialize_hdf5_file()
-        >>> status = manager.start()  # Connect to device
-        >>> manager.run()  # Start data collection
-        >>> manager.event_marker = "stimulus_onset"
-        >>> manager.condition = "treatment_A"
-        >>> # ... experiment runs ...
-        >>> manager.stop()
+    4. Non-Responsibilities
+       - Signal processing, filtering, analytics.
+       - Validation of sensor calibration.
+       - External synchronization beyond timestamp tagging.
+       - Automatic re-connection after crash (requires manual restart).
     
-    Sensor Configuration:
-        - Sensor 1: Force sensor (Newtons)
-        - Sensor 2: Respiration Rate sensor (breaths/minute)
-        - Sampling Period: 100ms (10 Hz)
-        - Data Format: Real-time streaming with timestamp synchronization
+    5. Public State (mutable at runtime)
+       - event_marker: str (default "start_up").
+       - condition: str (default "None").
+       - device_started: bool (True after successful start()).
+       - running: bool (True while collection thread active).
     
-    Data Structure:
-        HDF5/CSV columns:
-        - timestamp_unix: Unix timestamp (float64)
-        - timestamp: ISO 8601 timestamp (string)
-        - force: Force measurement in Newtons (float32)
-        - RR: Respiration rate in breaths/minute (float32)
-        - event_marker: Experimental event label (string)
-        - condition: Experimental condition (string)
+    6. Data Schema (HDF5 + CSV; dataset 'data')
+       - timestamp_unix: float64
+       - timestamp: UTF-8 string
+       - force: float32 (NaN if missing)
+       - RR: float32 (NaN if missing)
+       - event_marker: UTF-8 string
+       - condition: UTF-8 string
     
-    Connection Protocol:
-        1. USB connection attempted first (higher reliability)
-        2. Bluetooth Low Energy (BLE) fallback if USB unavailable
-        3. Device threshold: -100 dBm for Bluetooth discovery
-        4. Automatic sensor enablement and configuration
+    7. Method Contracts (summary)
+       - set_data_folder(path): Creates folder if absent; idempotent.
+       - set_filenames(subject_id): Prepares base filenames; requires data_folder set.
+       - initialize_hdf5_file(): Opens/creates file; prepares extensible dataset.
+       - start(): Returns "Vernier device started." or "Error"; sets device_started.
+       - run(): Spawns daemon thread if device_started; sets running + streaming flags.
+       - stop(): Graceful shutdown; converts file; resets device_started.
+       - reset(): Emergency cleanup; closes file; converts to CSV if possible; clears references.
+       - write_to_hdf5(row): Appends single structured row; silently ignores if uninitialized.
+       - hdf5_to_csv(): Chunked export; no overwrite protection (same filename reused).
     
-    Error Handling & Recovery:
-        - Automatic crash detection via device disconnection
-        - File versioning system for crash recovery (_0, _1, _2, etc.)
-        - Graceful resource cleanup on errors
-        - Thread synchronization for safe shutdown
-        - Event loop management for async operations
+    8. Concurrency Model
+       - Single background thread (Thread, daemon=True) for collect_data().
+       - Synchronization via boolean flags: running, _streaming.
+       - No locks: Assumes single writer thread; main thread invokes control methods.
     
-    Thread Safety:
-        - Main thread: Device control and management
-        - Data collection thread: Continuous sensor reading
-        - Thread synchronization using boolean flags
-        - Safe resource cleanup on thread termination
+    9. Error & Crash Handling
+       - Device read failure or exception triggers: _crashed=True, _num_crashes++, reset().
+       - File version increments via _num_crashes in filenames.
+       - On stop()/reset(): flush + close HDF5 prior to CSV conversion.
+       - Exceptions logged to stdout; no raising upward.
     
-    File Management:
-        - Real-time HDF5 storage for structured data
-        - Automatic CSV conversion on stop/crash
-        - Chunked processing for large datasets (1000 rows/chunk)
-        - UTF-8 encoding for international compatibility
+    10. Guarantees
+       - Never overwrites existing rows in HDF5 (append-only).
+       - CSV reflects final HDF5 state at time of conversion.
+       - Each row contains current event_marker and condition snapshot.
     
-    Dependencies:
-        - godirect: Vernier Go Direct device communication
-        - asyncio: Asynchronous device operations
-        - h5py: HDF5 file operations
-        - pandas: CSV conversion and data manipulation
-        - numpy: Array operations and data types
-        - bleak: Bluetooth Low Energy communication
-        - TimestampManager: Custom timestamp utilities
+    11. Invariants
+       - If device_started == False then run() will not start collection.
+       - HDF5 dataset grows monotonically.
+       - _num_crashes increments only on crash path.
     
-    Device Requirements:
-        - Vernier Go Direct Force & Acceleration sensor
-        - Vernier Go Direct Respiration Monitor Belt
-        - USB connection (preferred) or Bluetooth capability
-        - Compatible with Go Direct app ecosystem
+    12. Performance Considerations
+       - Resize per row (amortized cost acceptable for moderate rates).
+       - CSV chunk size (1000) balances memory vs I/O.
     
-    Note:
-        - Requires 'pip install godirect' for device communication
-        - Device auto-discovery may take several seconds
-        - Crash recovery automatically preserves all collected data
-        - Event markers and conditions are synchronized with timestamps
-        - File naming follows YYYY-MM-DD_subjectID_respiratory_data_crashNum format
-        - When started, the class connects to a Go Direct device via USB (if USB 
-            is not connected, then it searches for the nearest GoDirect device via Bluetooth)
-            and starts reading measurements from the default sensor at a period of 
-            1000ms (1 sample/second).
-        - If you want to enable specific sensors, you will need to know the sensor numbers.
-            Run the example called 'gdx_getting_started_device_info.py' to get that information.
-        - Installation of the godirect package is required using 'pip3 install godirect'
+    13. Extensibility Points
+       - Sensor set: modify enable_sensors([...]) in start().
+       - Sampling rate: adjust self._device.start(period=100).
+       - Additional columns: extend dtype + write_to_hdf5().
+       - Reconnection logic: augment collect_data() crash branch.
+    
+    14. Constraints
+       - Requires godirect + bleak + h5py + pandas + numpy installed.
+       - BLE discovery depends on OS BLE stack availability.
+    
+    15. Termination Semantics
+       - stop(): Intended graceful end of session.
+       - reset(): Recovery after crash or manual hard reset.
+    
+    16. File Naming Pattern
+       YYYY-MM-DD_subjectID_respiratory_data_<crashIndex>.h5 / .csv
+    
+    17. Usage Minimal Example
+       manager = VernierManager()
+       manager.set_data_folder(subject_folder)
+       manager.set_filenames(subject_id)
+       manager.initialize_hdf5_file()
+       manager.start()
+       manager.run()
+       # mutate manager.event_marker / manager.condition as needed
+       manager.stop()
+    
+    18. Safety Notes
+       - Call stop() before program exit to ensure flush/CSV export.
+       - After crash (reset called) must re-run start(), run().
+    
+    19. Logging
+       - All operational status printed to stdout; no external logger integrated.
+    
+    20. Versioning
+       - Crash-based numeric suffix only; no semantic versioning.
+    
+    End of CONTRACT.
     """
     def __init__(self):
         self._device = None

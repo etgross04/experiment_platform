@@ -6,73 +6,102 @@ import librosa
 
 class AudioFileManager:
     """
-    A comprehensive audio file management system for experimental audio data processing.
+    CONTRACT: AudioFileManager
     
-    The AudioFileManager class provides functionality for managing, processing, and organizing
-    audio files during experimental sessions. It supports audio resampling, segmentation,
-    format conversion, and file organization with robust error handling.
+    Role:
+        Central utility for experiment audio lifecycle: capture reference (recording_file),
+        organize into audio_folder, transform (resample, segment, normalize), extract chunks,
+        backup and clean temp artifacts, and provide metadata (duration).
     
-    Key Features:
-    - Audio file copying and organization into structured directories
-    - Audio resampling to target sample rates using librosa
-    - WAV file segmentation into user-defined duration chunks
-    - Audio data extraction as normalized numpy arrays
-    - Temporary file management and cleanup
-    - Audio duration calculation and metadata extraction
-    - Cross-platform file operations with comprehensive error handling
+    Responsibilities:
+        - Persist a captured WAV file into structured subject hierarchy.
+        - Generate canonical filenames (timestamp_id_param1_param2.wav).
+        - Copy, backup, and delete audio artifacts safely.
+        - Resample to target sample rate (librosa) or simple in-memory interpolation.
+        - Split WAV into fixed-duration sequential segments.
+        - Extract normalized numpy slices (optionally resampled) for downstream models.
+        - Report total duration.
     
-    Attributes:
-        recording_file (str): Path to the current recording file being processed
-        audio_folder (str): Directory path for organized audio file storage
+    Non-Responsibilities:
+        - Recording audio.
+        - Concurrency control.
+        - Overlapping or variable-length segmentation logic.
+        - Format handling beyond PCM WAV.
     
-    Usage:
-        >>> manager = AudioFileManager("temp_recording.wav", "/data/audio")
-        >>> manager.set_audio_folder("/experiment/subject_001/audio_files")
-        >>> manager.save_audio_file("2024-01-01_subject_001_task_A_trial_1.wav")
-        >>> segments = manager.split_wav_to_segments("001", "task_A", "recording.wav", segment_duration=5)
-        >>> audio_data = manager.get_audio_chunk_as_np(offset=10, duration=5, sample_rate=16000)
-        >>> duration = manager.get_audio_duration()
+    Inputs (selected methods):
+        __init__(recording_file: str, audio_save_folder: str)
+        set_audio_folder(subject_folder: str)
+        save_audio_file(new_filename: str)
+        delete_recording_file(file_path: str)
+        resample(input_file: str, target_sample_rate: int = 24000)
+        rename_audio_file(timestamp: str, id: str|int, name_param1: str, name_param2: str)
+        backup_tmp_audio_files()
+        get_audio_chunk_as_np(offset: float = 0, duration: float|None = None, sample_rate: int = 16000)
+        resample_audio(signal: np.array, original_sample_rate: int, target_sample_rate: int)
+        get_audio_duration()
+        normalize_audio(audio: np.array)
+        split_wav_to_segments(id: str|int, task_id: str|int, input_wav: str, segment_duration: int = 5, output_folder: str = "tmp")
     
-    File Organization:
-        Audio files are organized in a hierarchical structure:
-        subject_data/
-        ├── <experiment_name>/
-        │   └── <trial_name>/
-        │       └── <subject_folder>/
-        │           └── audio_files/
-        │               ├── original_recordings.wav
-        │               ├── resampled_files.wav
-        │               └── segmented_chunks.wav
+    Outputs:
+        - Paths to copied, resampled, or segmented WAV files.
+        - Numpy float32 arrays normalized to [-1, 1] (mono).
+        - Duration (float seconds).
+        - Filename strings.
     
-    Audio Processing:
-        - Supports mono and stereo audio conversion
-        - Resampling using librosa with configurable target sample rates
-        - Audio normalization and format conversion (int16, float32)
-        - Segmentation with overlapping or non-overlapping windows
-        - Real-time audio chunk extraction for analysis
+    Side Effects:
+        - Creates directories.
+        - Writes WAV segment/resample files.
+        - Copies and deletes files in audio_folder and tmp/.
+        - Prints status/error messages (stdout).
+    
+    File Structure Assumption:
+        subject_data/<experiment>/<trial>/<subject>/audio_files/
     
     Error Handling:
-        - Comprehensive exception handling for file operations
-        - Permission and access error management
-        - Graceful handling of missing files and invalid paths
-        - Detailed error logging for debugging
+        - Wraps file operations (copy/delete/resample/split) with broad exception capture.
+        - Prints diagnostic messages; does not raise unless parameter validation fails (e.g., invalid output folder).
     
-    Dependencies:
-        - os: File system operations
-        - numpy: Array operations and audio data manipulation
-        - wave: WAV file reading and writing
-        - shutil: High-level file operations
-        - librosa: Advanced audio processing and resampling
+    Invariants:
+        - recording_file points to a WAV file path (caller responsibility).
+        - audio_folder is a writable directory once set.
+    
+    Performance Notes:
+        - Resampling via librosa.load is CPU-bound for long files.
+        - Interpolation resample is linear (no anti-alias filtering).
+        - Segment writing is sequential; no parallelization.
     
     Thread Safety:
-        This class is not inherently thread-safe. External synchronization
-        is required for concurrent access to the same audio files.
+        - Not thread-safe; external synchronization required if shared across threads.
     
-    Note:
-        - Audio files are processed in WAV format with support for various sample rates
-        - Temporary files are automatically managed and cleaned up
-        - Resampled files maintain original audio quality with appropriate bit depth
-        - File naming follows timestamp_id_parameter1_parameter2.wav convention
+    Data Expectations:
+        - PCM 16-bit WAV input for chunk extraction and segmentation.
+        - Stereo converted to mono via channel mean.
+    
+    Filename Convention:
+        timestamp_id_param1_param2.wav
+    
+    Extension Points:
+        - Replace interpolation with high-quality resampler.
+        - Add overlap/stride parameters for segmentation.
+        - Integrate logging instead of print.
+        - Support additional codecs via soundfile.
+    
+    Constraints:
+        - Requires librosa, numpy, wave, shutil, os.
+        - tmp/ directory must exist or be creatable.
+    
+    Example (minimal):
+        manager = AudioFileManager("tmp/current.wav", "")
+        manager.set_audio_folder("/experiment/subject/audio_files")
+        manager.save_audio_file(manager.rename_audio_file("2024-01-01T10-00-00", "001", "taskA", "trial1"))
+        segs = manager.split_wav_to_segments("001", "taskA", "tmp/current.wav", 5)
+        chunk = manager.get_audio_chunk_as_np(offset=0, duration=5, sample_rate=16000)
+        dur = manager.get_audio_duration()
+    
+    Non-Goals:
+        - No automatic cleanup scheduling.
+        - No metadata (bitrate, codec) beyond wave basics.
+        - No async IO.
     """
     def __init__(self, recording_file, audio_save_folder) -> None:
         self._recording_file = recording_file

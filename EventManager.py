@@ -11,62 +11,97 @@ from datetime import datetime, timezone
 
 class EventManager:
     """
-    A thread-safe event manager for streaming and recording experimental event markers.
+    EventManager: Thread-safe event marker streaming and recording system.
     
-    The EventManager class provides functionality to stream, record, and manage event markers
-    during experimental sessions. It supports real-time data streaming to HDF5 files and 
-    automatic conversion to CSV format upon stopping.
+    CONTRACT SPECIFICATION
+    ======================
     
-    Key Features:
-    - Real-time event marker streaming with timestamps
-    - Thread-safe data recording to HDF5 format
-    - Automatic CSV conversion for post-processing
-    - Configurable event markers and experimental conditions
-    - Safe shutdown with proper file closure
+    Purpose:
+    --------
+    Stream and record experimental event markers with timestamps to HDF5 format,
+    with automatic CSV conversion on shutdown.
     
-    Attributes:
-        time_started_iso (str): ISO timestamp when streaming started
-        time_started_unix (str): Unix timestamp when streaming started  
-        is_streaming (bool): Current streaming status
-        current_row (dict): Current data row being processed
-        data_folder (str): Directory path for data files
-        csv_filename (str): Path to output CSV file
-        hdf5_filename (str): Path to output HDF5 file
-        event_marker (str): Current event marker label
-        condition (str): Current experimental condition
+    Lifecycle:
+    ----------
+    1. Initialize: EventManager()
+    2. Configure: set_data_folder() -> set_filenames() -> initialize_hdf5_file()
+    3. Stream: start() -> (set event_marker/condition as needed) -> stop()
     
-    Usage:
-        >>> manager = EventManager()
-        >>> manager.set_data_folder("/path/to/data")
-        >>> manager.set_filenames("subject_001")
-        >>> manager.initialize_hdf5_file()
-        >>> manager.start()
-        >>> manager.event_marker = "stimulus_onset"
-        >>> manager.condition = "treatment_A"
-        >>> # ... experiment runs ...
-        >>> manager.stop()
+    Required Call Sequence:
+    -----------------------
+    manager = EventManager()
+    manager.set_data_folder(path)      # MUST be called before set_filenames()
+    manager.set_filenames(subject_id)  # MUST be called before initialize_hdf5_file()
+    manager.initialize_hdf5_file()     # MUST be called before start()
+    manager.start()                    # Begins streaming
+    # ... set event_marker and condition as needed during experiment ...
+    manager.stop()                     # Stops streaming, closes files, converts to CSV
     
-    Thread Safety:
-        This class is designed to be thread-safe for concurrent access to event markers
-        and conditions during streaming. Data writing operations are protected by locks.
+    State Machine:
+    --------------
+    INITIALIZED -> CONFIGURED (after set_data_folder/set_filenames/initialize_hdf5_file)
+    CONFIGURED -> STREAMING (after start())
+    STREAMING -> STOPPED (after stop())
     
-    File Formats:
-        - HDF5: Real-time structured data storage with fields:
-          * timestamp_unix: Unix timestamp
-          * timestamp_iso: ISO 8601 timestamp  
-          * event_marker: Event marker string
-          * condition: Experimental condition string
-        - CSV: Post-processing format with same field structure
+    Thread Safety Guarantees:
+    -------------------------
+    - event_marker and condition properties are thread-safe (lock-protected writes)
+    - HDF5 writes are serialized via lock
+    - Multiple concurrent reads of event_marker/condition are safe
+    - start() and stop() are idempotent
+    
+    Data Format Contract:
+    ---------------------
+    HDF5 Schema (dataset 'data'):
+        - timestamp_unix: utf-8 string (Unix epoch timestamp)
+        - timestamp_iso: utf-8 string (ISO 8601 format)
+        - event_marker: utf-8 string (current marker value)
+        - condition: utf-8 string (current condition value)
+    
+    CSV Schema (matches HDF5):
+        - Same field names and string types
+        - Header row included
+        - One event per row
+    
+    Preconditions:
+    --------------
+    - data_folder MUST exist and be writable
+    - subject_id MUST be provided before calling set_filenames()
+    - TimestampManager module must be available as 'tm'
+    - initialize_hdf5_file() MUST complete successfully before start()
+    
+    Postconditions:
+    ---------------
+    - After stop(): HDF5 file is closed and flushed
+    - After stop(): CSV file exists with all streamed data
+    - After stop(): streaming thread is terminated
+    - atexit handler ensures cleanup even on abnormal termination
+    
+    Error Handling Contract:
+    ------------------------
+    - ValueError: Raised if event_marker or condition set to non-string
+    - ValueError: Raised if set_data_folder() not called before set_filenames()
+    - Prints error messages but does not raise exceptions for:
+      * HDF5 initialization failures
+      * File write failures during streaming
+      * CSV conversion failures
+    
+    Performance Characteristics:
+    ----------------------------
+    - Sampling rate: 100 Hz (0.01s sleep between samples)
+    - HDF5 dataset grows dynamically (no preallocated size)
+    - CSV conversion uses chunked reading (1000 rows per chunk)
+    
+    Invariants:
+    -----------
+    - If is_streaming is True, thread is alive and HDF5 file is open
+    - event_marker and condition are always strings (enforced by setters)
+    - current_row always has keys: timestamp_unix, timestamp_iso, event_marker, condition
     
     Dependencies:
-        - h5py: HDF5 file operations
-        - numpy: Array operations
-        - pandas: CSV conversion
-        - TimestampManager: Custom timestamp utilities
-    
-    Note:
-        The manager automatically registers an atexit handler to ensure proper cleanup
-        and file closure when the program terminates.
+    -------------
+    - h5py, numpy, pandas, threading, atexit, os, time, datetime
+    - TimestampManager module (imported as tm)
     """
     def __init__(self):
         self.time_started_iso = None
