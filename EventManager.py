@@ -107,11 +107,12 @@ class EventManager:
         self.time_started_iso = None
         self.time_started_unix = None
         self.is_streaming = False
-        self.current_row = {key: None for key in ["unix_timestamp", "iso_timestamp", "event_marker", "condition"]}
+        self.current_row = {key: None for key in ["unix_timestamp", "iso_timestamp", "event_marker", "condition", "experimenter_name"]}
         
         self._event_marker = 'startup'
         self._condition = 'None'
         
+        self._experimenter_name = 'unknown'
         self.thread = None
         self.shutdown_event = Event()
         self.lock = threading.Lock()
@@ -130,6 +131,17 @@ class EventManager:
         print("Event Manager data folder, .hdf5 and .csv files will be set when experiment/trial and subject information is submitted.")
 
     # Property getters and setters ##################################
+    @property
+    def experimenter_name(self):
+        return self._experimenter_name
+    
+    @experimenter_name.setter
+    def experimenter_name(self, value):
+        if isinstance(value, str):
+            self._experimenter_name = value
+        else:
+            raise ValueError("Experimenter name must be a string.")
+        
     @property
     def data_folder(self):
         return self._data_folder
@@ -252,7 +264,8 @@ class EventManager:
                     ('timestamp_unix', h5py.string_dtype(encoding='utf-8')),
                     ('timestamp_iso', h5py.string_dtype(encoding='utf-8')),
                     ('event_marker', h5py.string_dtype(encoding='utf-8')),
-                    ('condition', h5py.string_dtype(encoding='utf-8'))
+                    ('condition', h5py.string_dtype(encoding='utf-8')), 
+                    ('experimenter_name', h5py.string_dtype(encoding='utf-8'))
                 ])
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
@@ -281,6 +294,7 @@ class EventManager:
                 self.current_row["timestamp_iso"] = tm.get_timestamp("iso")
                 self.current_row["event_marker"] = self._event_marker
                 self.current_row["condition"] = self._condition
+                self.current_row["experimenter_name"] = self.experimenter_name
                 
                 self.write_to_hdf5(self.current_row)
 
@@ -294,7 +308,7 @@ class EventManager:
         # with self.lock:
         # Append the new row to the dataset
         self._dataset.resize(self._dataset.shape[0] + 1, axis=0)
-        self._dataset[-1] = (row['timestamp_unix'], row['timestamp_iso'], row['event_marker'], row['condition'])
+        self._dataset[-1] = (row['timestamp_unix'], row['timestamp_iso'], row['event_marker'], row['condition'], row['experimenter_name'])
 
     def hdf5_to_csv(self):
         """

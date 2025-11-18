@@ -10,6 +10,7 @@ from AudioFileManager import AudioFileManager
 from FormManager import FormManager
 from SERManager import SERManager
 from VernierManager import VernierManager
+from PolarManager import PolarManager
 from datetime import datetime, timezone
 import json
 import threading
@@ -53,14 +54,7 @@ test_manager = None
 ser_manager = None
 form_manager = None
 vernier_manager = None
-
-SENSOR_MAPPING = {
-    'Heart Rate (HR)': 'heart_rate',
-    'Electroencephalography (EEG)': 'eeg', 
-    'Electrodermal Activity (EDA)': 'eda',
-    'Respiration': 'respiratory',
-    'Eye Tracking': 'eye_tracking'
-}
+polar_manager = None
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['DEBUG'] = True
@@ -76,13 +70,68 @@ CORS(app, resources={
 @app.route('/api/upload-survey', methods=['POST'])
 def upload_survey():
     """
-    Handles the upload of a survey file via a POST request.
-    Checks for the presence of a file in the request, validates the filename,
-    and saves the file to the 'surveys' directory in the current working directory.
-    Creates the 'surveys' directory if it does not exist.
-    Returns:
-        JSON response indicating success and the filename if the upload is successful,
-        or an error message with a 400 status code if the file is missing or not selected.
+    CONTRACT: Upload a single survey file (generic form/survey config) and persist it to ./surveys/.
+
+    ENDPOINT:
+        Route: /api/upload-survey
+        Method: POST
+        Auth: None (CORS open) – caller must be trusted environment.
+        Content-Type: multipart/form-data
+
+    INPUT (multipart/form-data):
+        file: Required. A single file field. Filename must be non-empty.
+              No explicit MIME/type validation beyond presence and name.
+    
+    PRECONDITIONS:
+        - Request contains 'file' key in request.files.
+        - file.filename is not empty.
+        - Server process has write permission in current working directory.
+
+    PROCESS:
+        1. Validate presence of file field.
+        2. Validate non-empty filename.
+        3. Ensure ./surveys directory exists (idempotent mkdir).
+        4. Sanitize filename via secure_filename.
+        5. Save file to ./surveys/<sanitized_filename> (overwrite if same name already exists).
+    
+    POSTCONDITIONS:
+        - File persisted to disk at surveys/<sanitized_filename>.
+        - No database state altered.
+    
+    OUTPUT (JSON):
+        Success (200):
+            {
+              "success": true,
+              "filename": "<sanitized_filename>"
+            }
+        Failure (400):
+            {
+              "error": "No file provided" | "No file selected"
+            }
+
+    ERROR CONDITIONS:
+        400: Missing file field, empty filename.
+        (Other IO errors not explicitly surfaced; any unexpected exception would propagate if added later.)
+
+    SIDE EFFECTS:
+        - Creates ./surveys directory if absent.
+        - Writes file to filesystem.
+
+    IDEMPOTENCY:
+        - Repeated identical uploads overwrite existing file silently (non-idempotent w.r.t content integrity).
+
+    SECURITY NOTES:
+        - Filename sanitized; no path traversal.
+        - No size limit enforced; large uploads may impact disk.
+
+    PERFORMANCE:
+        - O(file_size) disk write. No additional processing.
+
+    EXAMPLE (curl):
+        curl -X POST -F "file=@survey.json" http://localhost:5001/api/upload-survey
+
+    RETURNS:
+        Flask Response (application/json).
     """
 
     if 'file' not in request.files:
@@ -129,16 +178,75 @@ def set_condition():
 @app.route('/record_task_audio', methods=['POST'])
 def record_task_audio():
     """
-    Handle audio recording tasks based on the provided action.
-    This function processes JSON data from a request to either start or stop an audio recording.
-    It manages the recording state, updates event markers, and saves audio files with appropriate metadata.
-    Request JSON structure:
-    {"action": "start" or "stop", "question": <question_number>,"event_marker": <event_marker_text>}
-    Returns:
-        Response: A JSON response with a message indicating the result of the action and an HTTP status code.
-        - If action is 'start': {"message": "Recording started."}, 200
-        - If action is 'stop':  {"message": "Recording stopped."}, 200
-        - If action is invalid: {"message": "Invalid action."}, 400
+    CONTRACT: Start or stop an individual task audio recording and log metadata.
+
+    ENDPOINT:
+        Route: /record_task_audio
+        Method: POST
+        Auth: None (CORS open)
+        Content-Type: application/json
+
+    REQUEST JSON:
+        {
+          "action": "start" | "stop",
+          "question": <int|str>,           # Required when action=start/stop
+          "event_marker": <str>,           # Base marker; question appended internally
+          "condition": <str|null>          # Optional condition label
+        }
+
+    PRECONDITIONS:
+        - recording_manager initialized
+        - event_manager & vernier_manager initialized (if respiratory data used)
+        - subject_manager.subject_id set (for file naming on stop)
+        - audio_file_manager configured (for saving on stop)
+
+    PROCESS (action=start):
+        1. Begin recording via recording_manager.start_recording()
+        2. Compose event_marker = f"{event_marker}_{question}"
+        3. Set event markers on event_manager & vernier_manager
+        4. Poll until stream_is_active or timeout (10s)
+
+    PROCESS (action=stop):
+        1. Stop recording via recording_manager.stop_recording()
+        2. Derive timestamps (start, end) from recording_manager
+        3. Build filename: <subject_id>_<start_timestamp>_<event_marker>.wav
+        4. Append row to subject CSV (Timestamp, Time_Stopped, Event_Marker, Condition, Audio_File)
+        5. Persist audio file via audio_file_manager.save_audio_file()
+
+    POSTCONDITIONS (start):
+        - Recording stream active (or 400 on failure)
+        - Event marker updated
+
+    POSTCONDITIONS (stop):
+        - Audio file written
+        - Subject CSV row appended
+
+    RESPONSES:
+        200 start: {"message": "Recording started..."}
+        200 stop:  {"message": "Recording stopped."}
+        400 invalid action: {"message": "Invalid action."}
+        400 failure: {"error": "Error processing request."}
+
+    ERROR CONDITIONS:
+        - Invalid action value
+        - Stream start timeout
+        - Exceptions in recording or file operations
+
+    SIDE EFFECTS:
+        - Mutates global managers' state
+        - Writes WAV file and CSV row
+
+    STATE MUTATIONS:
+        - recording_manager.stream_is_active toggled
+        - event_manager.event_marker updated
+        - vernier_manager.event_marker updated (if present)
+
+    IDEMPOTENCY:
+        - start: non-idempotent (duplicate calls create overlapping attempts)
+        - stop: non-idempotent (multiple stops may duplicate logging)
+
+    RETURNS:
+        Flask JSON response (status code per outcome).
     """
     global recording_manager, audio_file_manager, subject_manager, vernier_manager, event_manager
     data = request.get_json()
@@ -603,9 +711,11 @@ def set_experiment_trial(session_id):
         data = request.json
         experiment_folder_name = data.get('experiment_name', '').strip()
         trial_name = data.get('trial_name', '').strip()
+        student_first_name = data.get('student_first_name', '').strip()
+        student_last_name = data.get('student_last_name', '').strip()
         
-        if not experiment_folder_name or not trial_name:
-            return jsonify({'error': 'Both experiment name and trial name are required'}), 400
+        if not experiment_folder_name or not trial_name or not student_first_name or not student_last_name:
+            return jsonify({'error': 'Experiment name, trial name, and student names are all required'}), 400
         
         experiment_folder_name = "".join(c for c in experiment_folder_name if c.isalnum() or c in (' ', '-', '_')).strip()
         experiment_folder_name = experiment_folder_name.replace(' ', '_').lower()
@@ -615,6 +725,7 @@ def set_experiment_trial(session_id):
 
         ACTIVE_SESSIONS[session_id]['experiment_folder_name'] = experiment_folder_name
         ACTIVE_SESSIONS[session_id]['trial_name'] = trial_name
+        ACTIVE_SESSIONS[session_id]['experimenter_name'] = f"{student_first_name} {student_last_name}"
         ACTIVE_SESSIONS[session_id]['status'] = 'experiment_trial_set'
         
         experiment_dir = os.path.join(EXPERIMENT_SUBJECT_DATA_DIR, experiment_folder_name)
@@ -624,8 +735,14 @@ def set_experiment_trial(session_id):
         
         subject_manager.experiment_name = experiment_folder_name
         subject_manager.trial_name = trial_name
+        subject_manager.experimenter_name = f"{student_first_name} {student_last_name}"
 
-        # TODO: SET OTHER MANAGER FOLDER VARIABLES HERE
+        if vernier_manager is not None:
+            vernier_manager.experimenter_name = f"{student_first_name} {student_last_name}"
+        if event_manager is not None:
+            event_manager.experimenter = f"{student_first_name} {student_last_name}"
+        if polar_manager is not None:
+            polar_manager.experimenter_name = f"{student_first_name} {student_last_name}"
 
         print(f"Experiment and trial set for session {session_id}: {experiment_folder_name}/{trial_name}")
         
@@ -1421,6 +1538,42 @@ def stop_event_manager():
         print(f"Error stopping event manager: {e}")
         return jsonify({'error': 'Failed to stop event manager'}), 500
 
+@app.route('/start_polar_manager', methods=['POST'])
+def start_polar_manager():
+    """Start the polar manager"""
+    global polar_manager
+    try:
+        if polar_manager is None:
+            return jsonify({'error': 'Polar manager not initialized'}), 400
+            
+        if polar_manager.data_folder is None:
+            return jsonify({'error': 'Data folder not set for polar manager'}), 400
+        
+        if not polar_manager._file_opened:
+            polar_manager.initialize_hdf5_file()
+        
+        return jsonify({'success': True, 'message': 'Polar manager ready. Use async start() to connect to device.'})
+    
+    except Exception as e:
+        print(f"Error starting polar manager: {e}")
+        return jsonify({'error': 'Failed to start polar manager'}), 500
+
+@app.route('/stop_polar_manager', methods=['POST'])
+def stop_polar_manager():
+    """Stop the polar manager"""
+    global polar_manager
+    try:
+        if polar_manager is None:
+            return jsonify({'error': 'Polar manager not initialized'}), 400
+        
+        # Call the synchronous stop method (polar_manager needs to be updated to have sync stop)
+        polar_manager.stop()
+        return jsonify({'success': True, 'message': 'Polar manager stopped'})
+    
+    except Exception as e:
+        print(f"Error stopping polar manager: {e}")
+        return jsonify({'error': 'Failed to stop polar manager'}), 500
+    
 @app.route('/set_condition', methods=['POST'])
 def set_condition():
     """Set a condition for the event manager"""
@@ -1898,6 +2051,14 @@ def save_participant_info(session_id):
             'subject_dir': subject_dir
         })
 
+        if session_data.get('experimenter_name'):
+            subject_manager.experimenter_name = session_data['experimenter_name']
+            event_manager.experimenter_name = session_data['experimenter_name']
+            if vernier_manager is not None:
+                vernier_manager.experimenter_name = session_data['experimenter_name']
+            if polar_manager is not None:
+                polar_manager.experimenter_name = session_data['experimenter_name']
+
         # Always set for every experiment
         event_manager.set_data_folder(subject_dir)
         event_manager.set_filenames(email)
@@ -1905,6 +2066,9 @@ def save_participant_info(session_id):
         if vernier_manager is not None:
             vernier_manager.set_data_folder(subject_dir)
             vernier_manager.set_filenames(email)
+        if polar_manager is not None:
+            polar_manager.set_data_folder(subject_dir)
+            polar_manager.set_filenames(email)
         if audio_file_manager is not None:
             audio_file_manager.set_audio_folder(subject_dir)
         
@@ -1996,84 +2160,97 @@ def instantiate_modules(template_path):
             print("No procedures found in the experiment template.")
             return
         
-        needs_audio = False
+        needs_audio_ser = False
         needs_respiratory = False
+        needs_polar = False
+        needs_emotibit = False
         needs_mat = False
-        needs_ser = False
 
         print(f"Processing {len(data['procedures'])} procedures...")
 
+        # Read experiment-level data collection settings
+        collection_methods = data.get('dataCollectionMethods', {})
+        if collection_methods:
+            print(f"\n--- Data Collection Methods Configuration ---")
+            print(f"Polar HR: {collection_methods.get('polar_hr', False)}")
+            print(f"Vernier Resp: {collection_methods.get('vernier_resp', False)}")
+            print(f"EmotiBit: {collection_methods.get('emotibit', False)}")
+            print(f"Audio/SER: {collection_methods.get('audio_ser', False)}")
+            
+            if collection_methods.get('polar_hr'):
+                needs_polar = True
+                print("✓ Polar HR enabled")
+            
+            if collection_methods.get('vernier_resp'):
+                needs_respiratory = True
+                print("✓ Vernier respiration enabled")
+            
+            if collection_methods.get('emotibit'):
+                needs_emotibit = True
+                print("✓ EmotiBit enabled")
+            
+            if collection_methods.get('audio_ser'):
+                needs_audio_ser = True
+                print("✓ Audio/SER enabled")
+        
+        # Check for Mental Arithmetic Task (MAT) in stressor procedures
         for procedure in data.get('procedures', []):
             procedure_name = procedure.get('name', 'Unknown Procedure')
-            print(f"\n--- Processing procedure: {procedure_name} ---")
-            
             config_data = procedure.get('configuration', {})
             
-            # EXISTING CHECKS...
-            if config_data.get('sensors', {}).get('selectedSensors'):
-                selected_sensors = config_data['sensors']['selectedSensors']
-                print(f"Selected Sensors: {selected_sensors}")
-                if selected_sensors is not None:
-                    pass # TODO: CHECK TO SEE IF WE ARE STREAMING EMOTIBIT SENSOR DATA | Create emotibit_needed bool
-                
-                if selected_sensors is not None and isinstance(selected_sensors, list):
-                    if 'Respiration' in selected_sensors:
-                        needs_respiratory = True
-            
-            if procedure.get('id') == 'prs' or 'perceived restorativeness' in procedure.get('name', '').lower():
-                needs_audio = True
-                print("✓ PRS procedure detected - audio needed")
-            
-            if procedure.get('id') == 'main-task' or 'main experimental task' in procedure.get('name', '').lower():
-                needs_audio = True
-                print("✓ Main Task procedure detected - audio needed")
-            
-            if procedure.get('id') == 'ser-baseline' or 'ser baseline' in procedure.get('name', '').lower():
-                needs_ser = True
-                needs_audio = True
-
             if config_data.get('stressor-type', {}).get('stressorType') == "Mental Arithmetic Task":
                 needs_mat = True
-                needs_audio = True  
+                print(f"✓ Mental Arithmetic Task detected in: {procedure_name}")
 
         # DEBUG STATEMENTS
-        print(f"\n=== FINAL RESULTS ===")
-        print(f"needs_audio: {needs_audio}")
+        print(f"\n=== FINAL INSTANTIATION DECISIONS ===")
+        print(f"needs_audio_ser: {needs_audio_ser}")
         print(f"needs_respiratory: {needs_respiratory}")
+        print(f"needs_polar: {needs_polar}")
+        print(f"needs_emotibit: {needs_emotibit}")
         print(f"needs_mat: {needs_mat}")
 
-        global recording_manager, audio_file_manager, vernier_manager, test_manager, transcription_manager
+        global recording_manager, audio_file_manager, vernier_manager, polar_manager
+        global test_manager, transcription_manager, ser_manager
         
-        if needs_audio:
-            print("Initializing audio components...")
+        # Initialize audio and SER components together
+        if needs_audio_ser:
+            print("\n=== Initializing Audio & SER Components ===")
             audio_file_manager = AudioFileManager('tmp/recording.wav', 'tmp')
-            recording_manager = RecordingManager('tmp/recording.wav') 
+            recording_manager = RecordingManager('tmp/recording.wav')
             transcription_manager = TranscriptionManager()
             ser_manager = SERManager()
             print("✓ Audio recording initialized")
+            print("✓ Transcription manager initialized")
+            print("✓ SER manager initialized")
 
+        # Initialize respiratory/vernier if needed
         if needs_respiratory:
-            print("Initializing respiratory components...")
+            print("\n=== Initializing Vernier Respiration ===")
             vernier_manager = VernierManager()
-            print("✓ Respiratory streaming initialized")
+            print("✓ Vernier respiratory streaming initialized")
 
-        if needs_mat or needs_ser:
-            print("Initializing Mental Arithmetic Task components...")
+        # Initialize Polar HR if needed
+        if needs_polar:
+            print("\n=== Initializing Polar HR ===")
+            polar_manager = PolarManager()
+            print("✓ Polar HR manager initialized")
+
+        # Initialize EmotiBit if needed (placeholder for future implementation)
+        if needs_emotibit:
+            print("\n=== EmotiBit Requested ===")
+            print("⚠ EmotiBit streaming not yet implemented")
+            # TODO: Add EmotiBit manager when ready
+            # emotibit_manager = EmotiBitManager()
+
+        # Initialize test manager if MAT is needed
+        if needs_mat:
+            print("\n=== Initializing Mental Arithmetic Task ===")
             if test_manager is None:
                 test_manager = TestManager()
                 print("✓ Test manager initialized")
 
-            if transcription_manager is None:
-                transcription_manager = TranscriptionManager()
-                print("✓ Transcription manager initialized")
-
-            if ser_manager is None:
-                ser_manager = SERManager()
-                print("✓ SER manager initialized")
-
-            print("✓ Mental Arithmetic Task initialized")
-
-        print("=== INSTANTIATE_MODULES COMPLETE ===")
+        print("\n=== INSTANTIATE_MODULES COMPLETE ===\n")
 
     except Exception as e:
         print(f"Error instantiating modules for procedures: {e}")
@@ -2231,7 +2408,7 @@ def reset_experiment_managers():
         Prints an error message if any exception is raised during the reset process.
     """
     
-    global recording_manager, audio_file_manager, vernier_manager,test_manager
+    global recording_manager, audio_file_manager, vernier_manager,test_manager, polar_manager
     global transcription_manager, ser_manager, form_manager, subject_manager, event_manager
 
     try:
@@ -2243,7 +2420,10 @@ def reset_experiment_managers():
         
         if vernier_manager and hasattr(vernier_manager, 'stop'):
             vernier_manager.stop()
-    
+
+        if polar_manager and hasattr(polar_manager, 'stop'):
+            polar_manager.stop()
+
         recording_manager = None
         audio_file_manager = None
         vernier_manager = None

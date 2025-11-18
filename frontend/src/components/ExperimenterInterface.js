@@ -881,10 +881,14 @@ function ExperimenterInterface() {
   const [participantRegistered, setParticipantRegistered] = useState(false);
   const [showSetupForm, setShowSetupForm] = useState(true);
   const [isToolPanelOpen, setIsToolPanelOpen] = useState(false);
+
   const [setupData, setSetupData] = useState({
     experimentName: '',
-    trialName: ''
+    trialName: '',
+    studentFirstName: '',
+    studentLastName: ''
   });
+
   const [setupErrors, setSetupErrors] = useState({});
   const [sessionInfo, setSessionInfo] = useState(null);
 
@@ -1345,6 +1349,14 @@ useEffect(() => {
       errors.trialName = 'Trial name is required';
     }
     
+    if (!setupData.studentFirstName.trim()) {
+      errors.studentFirstName = 'Student first name is required';
+    }
+    
+    if (!setupData.studentLastName.trim()) {
+      errors.studentLastName = 'Student last name is required';
+    }
+    
     return errors;
   };
 
@@ -1365,7 +1377,9 @@ useEffect(() => {
         },
         body: JSON.stringify({
           experiment_name: setupData.experimentName,
-          trial_name: setupData.trialName
+          trial_name: setupData.trialName,
+          student_first_name: setupData.studentFirstName,
+          student_last_name: setupData.studentLastName
         })
       });
 
@@ -1591,18 +1605,18 @@ useEffect(() => {
     const allMetrics = new Set();
     
     experimentData.procedures.forEach(proc => {
-      if (proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors) {
-        const sensors = proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors || [];
+      // if (proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors) {
+      //   const sensors = proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors || [];
         
-        sensors.forEach(sensor => {
-          if (sensor.includes('Heart Rate') || sensor.includes('EEG') || sensor.includes('EDA')) {
-            allMetrics.add('biometrics');
-          }
-          if (sensor.includes('Respiration')) {
-            allMetrics.add('respiratory');
-          }
-        });
-      }
+      //   sensors.forEach(sensor => {
+      //     if (sensor.includes('Heart Rate') || sensor.includes('EEG') || sensor.includes('EDA')) {
+      //       allMetrics.add('biometrics');
+      //     }
+      //     if (sensor.includes('Respiration')) {
+      //       allMetrics.add('respiratory');
+      //     }
+      //   });
+      // }
       
       if (proc.id === 'prs' || proc.name.toLowerCase().includes('perceived restorativeness')) {
         allMetrics.add('audio_ser');
@@ -1691,6 +1705,36 @@ useEffect(() => {
             <small>This will create a trial subfolder within the experiment folder</small>
           </div>
 
+          <div className="form-group">
+            <label htmlFor="studentFirstName">Student First Name *</label>
+            <input
+              type="text"
+              id="studentFirstName"
+              name="studentFirstName"
+              value={setupData.studentFirstName}
+              onChange={handleSetupInputChange}
+              className={setupErrors.studentFirstName ? 'error' : ''}
+              placeholder="e.g., John"
+            />
+            {setupErrors.studentFirstName && <span className="error-text">{setupErrors.studentFirstName}</span>}
+            <small>First name of the experimenter conducting this trial</small>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="studentLastName">Student Last Name *</label>
+            <input
+              type="text"
+              id="studentLastName"
+              name="studentLastName"
+              value={setupData.studentLastName}
+              onChange={handleSetupInputChange}
+              className={setupErrors.studentLastName ? 'error' : ''}
+              placeholder="e.g., Smith"
+            />
+            {setupErrors.studentLastName && <span className="error-text">{setupErrors.studentLastName}</span>}
+            <small>Last name of the experimenter conducting this trial</small>
+          </div>
+          
           <div className="form-actions">
             <button type="submit" className="setup-submit-btn">
               Set Experiment & Trial

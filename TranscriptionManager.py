@@ -19,100 +19,97 @@ region = os.getenv("AZURE_SPEECH_REGION")
 
 class TranscriptionManager:
     """
-    A high-performance speech-to-text transcription manager using Azure's Fast Transcription API.
+    COMPONENT: TranscriptionManager
+    TYPE: Azure Speech-to-Text Service Wrapper
+    VERSION: 2024-05-15-preview
     
-    The TranscriptionManager class provides functionality for converting audio recordings to text
-    during experimental sessions. It utilizes Azure's Fast Transcription API for sub-2-second
-    response times and includes specialized mathematical answer parsing for numerical responses.
+    CONTRACT:
     
-    Key Features:
-    - Ultra-fast transcription using Azure's Fast Transcription API (30min → <1min)
-    - Real-time speech-to-text conversion with sub-2-second response times
-    - Mathematical answer extraction and parsing from speech
-    - Word-to-number conversion for spoken numerical responses
-    - Confidence scoring and error handling with detailed metadata
-    - Thread-safe operations with proper resource management
-    - Comprehensive error recovery and timeout protection
+    PURPOSE:
+    Convert audio recordings to text using Azure Fast Transcription API with mathematical answer parsing.
     
-    Attributes:
-        azure_key (str): Azure Cognitive Services subscription key
-        azure_region (str): Azure service region (e.g., 'eastus', 'westus2')
-        endpoint (str): Complete Azure Fast Transcription API endpoint URL
-        result (dict): Most recent transcription result with metadata
-        lock (threading.Lock): Thread synchronization for concurrent access
+    INITIALIZATION:
+    - REQUIRES: Environment variables AZURE_SPEECH_KEY and AZURE_SPEECH_REGION in .env file
+    - RAISES: ValueError if credentials missing
+    - CREATES: Thread-safe transcription manager with configured endpoint
     
-    Usage:
-        >>> manager = TranscriptionManager()
-        >>> result = manager.transcribe("audio_response.wav")
-        >>> if result["success"]:
-        ...     print(f"Text: {result['text']}")
-        ...     print(f"Parsed Answer: {result['answer']}")
-        ...     print(f"Processing Time: {result['processing_time']:.3f}s")
+    PRIMARY METHOD: transcribe(audio_file: str) -> dict
     
-    API Configuration:
-        - Endpoint: Azure Fast Transcription API (2024-05-15-preview)
-        - Language: English (en-US) with multi-locale support
-        - Audio Format: WAV files (other formats supported)
-        - Max File Size: 300 MB
-        - Max Duration: 2 hours
-        - Timeout: 30 seconds for API requests
+    INPUT CONTRACT:
+    - audio_file: Valid file path to audio recording
+    - ACCEPTS: WAV format (other formats supported)
+    - MAX_SIZE: 300 MB
+    - MAX_DURATION: 2 hours
     
-    Response Structure:
-        Transcription results include:
-        {
-            "success": bool,           # Operation success status
-            "text": str,              # Transcribed text
-            "answer": str/int/float,  # Parsed mathematical answer
-            "confidence": float,      # Transcription confidence (0.0-1.0)
-            "processing_time": float, # API response time in seconds
-            "source": str,           # "azure_fast_transcription"
-            "error": str             # Error message if failed
-        }
+    OUTPUT CONTRACT:
+    Returns dict with guaranteed keys:
+    {
+        "success": bool,              # ALWAYS present
+        "text": str,                  # Empty string if failed
+        "processing_time": float,     # Seconds, ALWAYS present
+        "source": "azure_fast_transcription",  # ALWAYS present
+        
+        # Only when success=True:
+        "answer": str|int|float,      # Parsed mathematical value or original text
+        "confidence": float,          # Range [0.0, 1.0]
+        
+        # Only when success=False:
+        "error": str                  # Error description
+    }
     
-    Mathematical Parsing:
-        - Direct number extraction: "42", "-3.14", "0.5"
-        - Word-to-number conversion: "twenty-one" → 21, "negative five" → -5
-        - Compound numbers: "forty two" → 42, "one hundred" → 100
-        - Decimal handling: "three point five" → 3.5
-        - Range: 0-100 with negative number support
+    PARSING RULES (Mathematical Answers):
+    - Extracts first number found: "the answer is 42" → 42
+    - Converts words to numbers: "twenty-one" → 21
+    - Handles negatives: "negative five" → -5
+    - Supports decimals: "-3.14" → -3.14
+    - Falls back to original text if no number detected
     
-    Error Handling:
-        - HTTP status code validation and detailed error reporting
-        - Request timeout protection (30-second limit)
-        - Credential validation on initialization
-        - Graceful fallback for parsing failures
-        - Comprehensive exception handling with metadata preservation
+    PERFORMANCE GUARANTEES:
+    - TARGET: Sub-2-second response for typical audio
+    - TIMEOUT: 30 seconds maximum
+    - BENCHMARK: 30-minute audio transcribed in <1 minute
     
-    Performance Optimization:
-        - Multipart form-data upload for efficient file transfer
-        - Streaming audio processing without local storage requirements
-        - Minimal memory footprint with automatic resource cleanup
-        - Connection pooling for repeated transcription requests
+    ERROR HANDLING:
+    - HTTP errors: Returns success=False with error message
+    - Timeouts: Returns success=False with "Request timeout (>30 seconds)"
+    - Exceptions: Returns success=False with exception string
+    - ALL errors preserve processing_time and source fields
     
-    Dependencies:
-        - azure.cognitiveservices.speech: Azure Speech SDK
-        - requests: HTTP client for API communication
-        - json: JSON data serialization and parsing
-        - re: Regular expression operations for text parsing
-        - dotenv: Environment variable management
-        - pathlib: Modern path handling
+    THREAD SAFETY:
+    - Instance variables protected by threading.Lock
+    - Safe for concurrent transcribe() calls
     
-    Environment Requirements:
-        Required environment variables in .env file:
-        - AZURE_SPEECH_KEY: Azure Cognitive Services subscription key
-        - AZURE_SPEECH_REGION: Azure service region identifier
+    AUXILIARY METHODS:
+    - test_connection() -> bool: Validates API connectivity
+    - get_service_info() -> dict: Returns configuration metadata
     
-    Thread Safety:
-        This class uses threading locks for safe concurrent access to results.
-        Multiple transcription requests can be processed simultaneously with
-        proper synchronization of shared resources.
+    STATE MANAGEMENT:
+    - self.result: Stores last transcription result (may be None)
+    - self.lock: Threading synchronization primitive
     
-    Note:
-        - Requires active Azure Cognitive Services subscription
-        - API usage is metered and billed per request
-        - Fast Transcription API provides significantly better performance than standard SDK
-        - Mathematical parsing is optimized for experimental response collection
-        - Connection testing available via test_connection() method
+    API ENDPOINT:
+    - URL: https://{region}.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe
+    - VERSION: 2024-05-15-preview
+    - LOCALE: en-US (configurable in request)
+    - METHOD: POST with multipart/form-data
+    
+    DEPENDENCIES REQUIRED:
+    - requests (HTTP client)
+    - azure.cognitiveservices.speech (SDK types)
+    - json, re, os, time, threading (stdlib)
+    
+    FAILURE MODES:
+    1. Missing credentials → ValueError at __init__
+    2. Invalid audio file → success=False, file error message
+    3. Network timeout → success=False, timeout error
+    4. API error → success=False, HTTP status + response text
+    5. Parsing exception → success=False, exception string
+    
+    INVARIANTS:
+    - Output dict ALWAYS contains: success, text, processing_time, source
+    - processing_time ALWAYS ≥ 0
+    - If success=True, text is non-None (may be empty string)
+    - If success=False, error key is present
     """
     def __init__(self):
         """

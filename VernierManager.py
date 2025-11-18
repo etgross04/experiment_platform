@@ -142,6 +142,7 @@ class VernierManager:
         self._sensors = None
         self._event_marker = "start_up"
         self._condition = 'None'
+        self._experimenter_name = None
         self._subject_id = None
         self.hdf5_file = None
         self.hdf5_filename = None
@@ -150,7 +151,7 @@ class VernierManager:
         self.thread = None
         self._running = False
         self._streaming = False
-        self._current_row = {"timestamp_unix": None, "timestamp": None, "force": None, "RR": None, "event_marker": self._event_marker, "condition": self._condition}
+        self._current_row = {"timestamp_unix": None, "timestamp": None, "force": None, "RR": None, "event_marker": self._event_marker, "condition": self._condition, "experimenter_name": None}
         self._device_started = False
         self._event_loop = None
         self._crashed = False
@@ -190,6 +191,14 @@ class VernierManager:
     @condition.setter
     def condition(self, value):
         self._condition = value
+
+    @property
+    def experimenter_name(self):
+        return self._experimenter_name
+    
+    @experimenter_name.setter
+    def experimenter_name(self, value):
+        self._experimenter_name = value
 
     def set_data_folder(self, subject_folder):
         self.data_folder = os.path.join(subject_folder, "respiratory_data")
@@ -234,7 +243,8 @@ class VernierManager:
                     ('force', 'f4'),
                     ('RR', 'f4'),
                     ('event_marker', h5py.string_dtype(encoding='utf-8')),
-                    ('condition', h5py.string_dtype(encoding='utf-8'))
+                    ('condition', h5py.string_dtype(encoding='utf-8')),
+                    ('experimenter_name', h5py.string_dtype(encoding='utf-8'))
                 ])
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
@@ -287,7 +297,7 @@ class VernierManager:
         self._dataset = None
         self._sensors = None
         self._godirect = None
-        self._current_row = {"timestamp_unix": None, "timestamp": None, "force": None, "RR": None, "event_marker": self._event_marker, "condition": self._condition}
+        self._current_row = {"timestamp_unix": None, "timestamp": None, "force": None, "RR": None, "event_marker": self._event_marker, "condition": self._condition, "experimenter_name": self._experimenter_name}
         self._streaming = False
         self.running = False
         self.hdf5_file = None
@@ -351,6 +361,7 @@ class VernierManager:
                     self._current_row["timestamp"] = ts
                     self._current_row["event_marker"] = self.event_marker
                     self._current_row["condition"] = self.condition
+                    self._current_row["experimenter_name"] = self.experimenter_name
 
                     for sensor in self._sensors:
                         if sensor.sensor_description == "Force":
@@ -480,7 +491,8 @@ class VernierManager:
             new_data[0]['RR'] = row.get('RR', np.nan)
             new_data[0]['event_marker'] = row.get('event_marker', '')
             new_data[0]['condition'] = row.get('condition', '')
-
+            new_data[0]['experimenter_name'] = row.get('experimenter_name', '')
+            
             new_size = self._dataset.shape[0] + 1
             self._resize_dataset(new_size)  
             self._dataset[-1] = new_data[0]

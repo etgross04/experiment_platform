@@ -323,6 +323,13 @@
         "description": "Select a video or audio to play during the break"
       }
     ],
+    "data-collection": [
+      {
+        "id": "collection-methods",
+        "title": "Sensors & Data Collection",
+        "description": "Select which sensors and data collection methods will be active throughout the experiment"
+      }
+    ],
     "consent": [
       {
         "id": "document",

@@ -54,6 +54,7 @@ class PolarManager:
     3. Experimental Integration:
        - Tracks event markers (e.g., "stimulus_onset", "response")
        - Records experimental conditions (e.g., "baseline", "treatment_A")
+       - Records experimenter name for data provenance
        - Synchronizes markers with physiological data
        
     4. Data Persistence:
@@ -66,6 +67,7 @@ class PolarManager:
     
     Initialization Sequence (REQUIRED):
         manager = PolarManager()
+        manager.experimenter_name = "researcher_initials"  # Optional, defaults to "unknown"
         manager.set_data_folder("/path/to/subject/folder")  # Must be called first
         manager.set_filenames("subject_id")                 # Must be called second
         manager.initialize_hdf5_file()                      # Must be called third
@@ -78,6 +80,7 @@ class PolarManager:
     Optional Event Tracking (during collection):
         manager.event_marker = "stimulus_onset"  # Set at any time during run()
         manager.condition = "treatment_A"        # Set at any time during run()
+        manager.experimenter_name = "JD"         # Set before or during collection
     
     ASYNC REQUIREMENTS:
     -------------------
@@ -109,6 +112,12 @@ class PolarManager:
         Default: "None"
         Examples: "control", "treatment_A", "high_stress", "relaxation"
         Updated values appear in all subsequent data rows
+        
+    experimenter_name: str
+        Name or initials of experimenter running the session
+        Default: "unknown"
+        Examples: "JD", "researcher_01", "Smith"
+        Updated values appear in all subsequent data rows
     
     PUBLIC METHODS:
     ---------------
@@ -136,6 +145,7 @@ class PolarManager:
         Effects:
             Creates filename: YYYY-MM-DD_{subject_id}_cardiac_data_{crash_num}.h5
             Sets self.hdf5_filename and self.csv_filename
+            Stores subject_id for crash recovery
             
         Requirements:
             Must call set_data_folder() first
@@ -151,6 +161,8 @@ class PolarManager:
             Creates HDF5 file with structured dataset
             Initializes dataset with proper dtype schema
             Sets self._file_opened = True
+            Handles crash recovery by checking _crashed flag
+            Automatically versions files on crash (_0, _1, _2, etc.)
             
         Requirements:
             Must call set_data_folder() first
@@ -163,6 +175,12 @@ class PolarManager:
             HRV: float32 (RMSSD in milliseconds)
             event_marker: string (experimental event label)
             condition: string (experimental condition label)
+            experimenter_name: string (experimenter name/initials)
+            
+        Crash Recovery:
+            If _crashed flag is True, increments crash counter
+            Creates new versioned filename automatically
+            Reopens or creates dataset in append mode
     
     async start() -> str
         Scan for and prepare connection to Polar H10 device.
@@ -219,7 +237,8 @@ class PolarManager:
         Error Handling:
             Catches connection errors
             Triggers crash recovery on unexpected disconnection
-            Increments crash counter and creates new file
+            Sets _crashed flag and increments _num_crashes
+            Calls reset() to clean up and prepare for restart
     
     async stop() -> str
         Stop data collection and finalize data files.
@@ -243,6 +262,29 @@ class PolarManager:
         Requirements:
             Should be called after run() completes
             Safe to call multiple times
+            Only performs file operations if device was started
+    
+    async reset() -> None
+        Reset the manager state and close all resources.
+        
+        Effects:
+            Closes HDF5 file with flush
+            Converts HDF5 to CSV (if possible)
+            Resets all state variables to defaults
+            Clears RR interval buffer
+            Resets current_row to default values
+            Sets device_started, streaming, running to False
+            Clears client connection
+            
+        Error Handling:
+            Catches and logs HDF5 close errors
+            Catches and logs CSV conversion errors
+            Continues reset even if errors occur
+            
+        Use Cases:
+            Called automatically on crash during run()
+            Can be called manually to reset state
+            Prepares manager for fresh initialization
     
     calculate_hrv_rmssd() -> Optional[float]
         Calculate HRV using RMSSD method from buffered RR intervals.
@@ -267,6 +309,59 @@ class PolarManager:
             Stress: <20 ms
             Relaxed: >100 ms
     
+    write_to_hdf5(row: dict) -> None
+        Write a single data row to the HDF5 dataset.
+        
+        Args:
+            row: Dictionary containing data fields
+            
+        Required Keys:
+            timestamp_unix: float (Unix timestamp)
+            timestamp: str (ISO 8601 format)
+            HR: float (heart rate in BPM)
+            HRV: float or None (HRV in ms)
+            event_marker: str (event label)
+            condition: str (condition label)
+            experimenter_name: str (experimenter name)
+            
+        Effects:
+            Resizes dataset by 1 row
+            Writes structured data to new row
+            
+        Error Handling:
+            Checks if file/dataset initialized
+            Logs errors without crashing
+    
+    close_h5_file() -> None
+        Flush and close the HDF5 file.
+        
+        Effects:
+            Flushes buffered data to disk
+            Closes file handle
+            Prints confirmation message
+            
+        Error Handling:
+            Safely handles already-closed files
+            Logs if file not initialized
+    
+    hdf5_to_csv() -> None
+        Convert HDF5 file to CSV format in chunks.
+        
+        Effects:
+            Reads HDF5 file in 1000-row chunks
+            Converts byte strings to UTF-8
+            Writes CSV with headers
+            Creates human-readable CSV file
+            
+        Performance:
+            Chunk-based processing for memory efficiency
+            Handles large datasets without memory overflow
+            
+        Error Handling:
+            Checks for file existence
+            Checks for 'data' dataset
+            Logs conversion errors
+    
     DATA FORMAT SPECIFICATION:
     --------------------------
     
@@ -279,16 +374,17 @@ class PolarManager:
             ('HR', 'f4'),                  # Heart rate (BPM), float32
             ('HRV', 'f4'),                 # HRV RMSSD (ms), float32
             ('event_marker', 'S50'),       # Event label, string
-            ('condition', 'S50')           # Condition label, string
+            ('condition', 'S50'),          # Condition label, string
+            ('experimenter_name', 'S50')        # Experimenter name, string
         ]
     
     CSV Structure:
         File: {date}_{subject_id}_cardiac_data_{crash_num}.csv
-        Columns: timestamp_unix,timestamp,HR,HRV,event_marker,condition
+        Columns: timestamp_unix,timestamp,HR,HRV,event_marker,condition,experimenter_name
         Encoding: UTF-8
         
     Example Data Row:
-        1699987234.567, 2024-11-14T15:30:34.567000, 72.0, 45.3, stimulus_onset, treatment_A
+        1699987234.567, 2024-11-14T15:30:34.567000, 72.0, 45.3, stimulus_onset, treatment_A, JD
     
     PHYSIOLOGICAL SPECIFICATIONS:
     ------------------------------
@@ -297,102 +393,6 @@ class PolarManager:
         Units: Beats per minute (BPM)
         Range: 50-180 BPM (typical during experiments)
         Source: Direct from Polar H10 via BLE Heart Rate Service
-        Update Rate: ~1 Hz
-        
-    RR Intervals:
-        Units: Milliseconds (ms)
-        Source: Direct from Polar H10 via BLE Heart Rate Service
-        Resolution: 1/1024 second (converted to milliseconds)
-        Format: Successive inter-beat intervals
-        
-    Heart Rate Variability (HRV):
-        Units: Milliseconds (ms)
-        Method: RMSSD (Root Mean Square of Successive Differences)
-        Window: 30-second sliding window
-        Calculation: Continuous, updates with each new RR interval
-        Interpretation:
-          Higher HRV = Greater autonomic flexibility (typically healthier)
-          Lower HRV = Reduced autonomic flexibility (stress, fatigue)
-    
-    BLUETOOTH SPECIFICATION:
-    -------------------------
-    
-    Service: Heart Rate Service
-        UUID: 0000180d-0000-1000-8000-00805f9b34fb
-        
-    Characteristic: Heart Rate Measurement
-        UUID: 00002a37-0000-1000-8000-00805f9b34fb
-        Properties: Notify
-        
-    Data Format (per Bluetooth SIG specification):
-        Byte 0: Flags
-            Bit 0: HR format (0=uint8, 1=uint16)
-            Bit 1-2: Sensor contact (11=detected)
-            Bit 3: Energy expended present
-            Bit 4: RR intervals present
-        Byte 1(-2): Heart rate value
-        Remaining: RR intervals (uint16, 1/1024 second resolution)
-    
-    DEPENDENCIES:
-    -------------
-    Required Packages:
-        bleak >= 0.20.0         # Bluetooth Low Energy communication
-        h5py >= 3.0.0           # HDF5 file operations
-        numpy >= 1.20.0         # Numerical operations
-        pandas >= 1.3.0         # CSV conversion
-        TimestampManager        # Custom timestamp utilities (must be in path)
-    
-    System Requirements:
-        Bluetooth 4.0+ (BLE support)
-        Python 3.8+
-        Platform: Windows, macOS, or Linux
-    
-    ERROR HANDLING CONTRACT:
-    -------------------------
-    
-    Connection Errors:
-        Device not found: Returns error message, sets device_started=False
-        Connection timeout: Triggers crash recovery
-        Device disconnection: Auto-increments crash counter, creates new file
-    
-    File Errors:
-        Permission denied: Prints error, continues operation if possible
-        Disk full: Raises exception, requires manual intervention
-    
-    Data Errors:
-        Invalid HR data: Skips write, continues collection
-        Malformed BLE packet: Logs error, continues collection
-    
-    Crash Recovery:
-        Detects unexpected disconnections
-        Closes current HDF5 file
-        Converts to CSV
-        Increments crash counter
-        Creates new versioned file on restart
-    
-    THREAD SAFETY:
-    --------------
-    This class is NOT thread-safe. All methods must be called from the same 
-    asyncio event loop. Do not share instances across threads. For multi-subject 
-    studies, create separate instances per subject.
-    
-    EXPERIMENTAL WORKFLOW EXAMPLE:
-    ------------------------------
-    
-    Example of complete experimental workflow:
-    
-        import asyncio
-        from PolarManager import PolarManager
-        
-        async def run_experiment():
-            # Initialize
-            manager = PolarManager()
-            manager.set_data_folder("/data/study_001/subject_042")
-            manager.set_filenames("P042")
-            manager.initialize_hdf5_file()
-            
-            # Connect to device
-            status = await manager.start()
             if "Error" in status:
                 print(f"Failed to start: {status}")
                 return
@@ -439,6 +439,7 @@ class PolarManager:
         self._device_address = None
         self._client: Optional[BleakClient] = None
         self._event_marker = "start_up"
+        self._experimenter_name = "unknown"
         self._condition = "None"
         self._subject_id = None
         self.hdf5_file = None
@@ -499,6 +500,14 @@ class PolarManager:
     def condition(self, value):
         self._condition = value
 
+    @property
+    def experimenter_name(self):
+        return self._experimenter_name
+    
+    @experimenter_name.setter
+    def experimenter_name(self, value):
+        self._experimenter_name = value
+
     def set_data_folder(self, subject_folder):
         """Set the data folder for storing cardiac data files."""
         self.data_folder = os.path.join(subject_folder, "cardiac_data")
@@ -550,7 +559,8 @@ class PolarManager:
                     ('HR', 'f4'),
                     ('HRV', 'f4'),
                     ('event_marker', h5py.string_dtype(encoding='utf-8')),
-                    ('condition', h5py.string_dtype(encoding='utf-8'))
+                    ('condition', h5py.string_dtype(encoding='utf-8')),
+                    ('experimenter_name', h5py.string_dtype(encoding='utf-8'))
                 ])
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
@@ -634,6 +644,7 @@ class PolarManager:
             self._current_row["HRV"] = hrv_value
             self._current_row["event_marker"] = self.event_marker
             self._current_row["condition"] = self.condition
+            self._current_row["experimenter_name"] = self.experimenter_name
             
             # Write to HDF5
             if self._streaming:
@@ -709,7 +720,7 @@ class PolarManager:
             self._running = False
             self._client = None
 
-    async def stop(self) -> str:
+    def stop(self) -> str:
         """Stop data collection and close connections."""
         try:
             self._running = False
@@ -734,7 +745,7 @@ class PolarManager:
             print(f"An error occurred: {e}")
             return f"An error occurred: {e}"
 
-    async def reset(self) -> None:
+    def reset(self) -> None:
         """Reset the manager state and close all resources."""
         try:
             print("Reset is closing HDF5 file...")
@@ -760,7 +771,8 @@ class PolarManager:
             "HR": None,
             "HRV": None,
             "event_marker": self._event_marker,
-            "condition": self._condition
+            "condition": self._condition,
+            "experimenter_name": self._experimenter_name
         }
         self._streaming = False
         self._running = False
@@ -791,6 +803,7 @@ class PolarManager:
             new_data[0]['HRV'] = row.get('HRV', np.nan)
             new_data[0]['event_marker'] = row.get('event_marker', '')
             new_data[0]['condition'] = row.get('condition', '')
+            new_data[0]['experimenter_name'] = row.get('experimenter_name', '')
 
             new_size = self._dataset.shape[0] + 1
             self._resize_dataset(new_size)  
@@ -847,18 +860,3 @@ class PolarManager:
         except Exception as e:
             print(f"Error converting HDF5 to CSV: {e}")
 
-
-# Example usage
-async def main():
-    manager = PolarManager()
-    manager.set_data_folder("/data/subject_001")
-    manager.set_filenames("001")
-    manager.initialize_hdf5_file()
-    
-    await manager.start()
-    await manager.run(duration_seconds=30)
-    await manager.stop()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
