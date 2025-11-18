@@ -655,7 +655,7 @@ function AddProcedureForm({ onClose, onProcedureAdded, config }) {
   );
 }
 
-function ExampleExperimentView({ onDragStart, onParadigmDragStart, config, onRefreshConfig }) {
+function ExampleExperimentView({ onDragStart, onParadigmDragStart, config, onProcedureAdded }) {
   const [expandedSections, setExpandedSections] = useState({
     'test-procedures': false,
     'experiment-paradigms': false,
@@ -708,8 +708,16 @@ function ExampleExperimentView({ onDragStart, onParadigmDragStart, config, onRef
   };
 
   const handleProcedureAdded = (newProcedure) => {
-    // Refresh the config to show the new procedure
-    onRefreshConfig();
+    // Call the parent's callback to update config
+    onProcedureAdded(newProcedure);
+    
+    // Optionally expand the category to show the new procedure
+    if (newProcedure.category) {
+      setExpandedCategories(prev => ({
+        ...prev,
+        [newProcedure.category]: true
+      }));
+    }
   };
 
   const totalCount = getTotalProcedureCount();
@@ -2522,11 +2530,10 @@ function ExperimentBuilder({ onBack }) {
   
   const initializedRef = useRef(false);
 
-  // Load configuration from JSON file
   const loadConfig = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/experiment-config.json?t=' + Date.now()); // Add cache busting
+      const response = await fetch('/api/experiment-config');
       if (!response.ok) {
         throw new Error('Failed to load experiment configuration');
       }
@@ -2605,8 +2612,34 @@ function ExperimentBuilder({ onBack }) {
     );
   };
 
-  const handleRefreshConfig = () => {
-    loadConfig();
+  const handleProcedureAdded = (newProcedure) => {
+    // Update config state directly without reloading from file
+    setConfig(prevConfig => {
+      if (!prevConfig) return prevConfig;
+      
+      return {
+        ...prevConfig,
+        procedures: {
+          ...prevConfig.procedures,
+          [newProcedure.id]: newProcedure
+        },
+        wizardSteps: {
+          ...prevConfig.wizardSteps,
+          [newProcedure.id]: [
+            {
+              id: 'psychopy-setup',
+              title: 'PsychoPy Setup',
+              description: 'Configure PsychoPy integration options'
+            },
+            {
+              id: 'task-description',
+              title: 'Task Configuration',
+              description: 'Define task parameters and settings'
+            }
+          ]
+        }
+      };
+    });
   };
 
   if (loading) {
@@ -2656,7 +2689,7 @@ function ExperimentBuilder({ onBack }) {
           onDragStart={handleDragStart}
           onParadigmDragStart={handleParadigmDragStart}
           config={config}
-          onRefreshConfig={handleRefreshConfig}
+          onProcedureAdded={handleProcedureAdded}
         />
         <ExperimentCanvas
           selectedProcedures={selectedProcedures}

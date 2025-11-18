@@ -875,7 +875,10 @@ def add_psychopy_procedure():
         if not procedure_id:
             return jsonify({'success': False, 'error': 'Invalid procedure name'}), 400
         
-        config_path = os.path.join('frontend', 'public', 'experiment-config.json')
+        config_path = os.path.join('experiments')
+        os.makedirs(config_path, exist_ok=True)
+        config_path = os.path.join(config_path, 'experiment-config.json')
+
         if not os.path.exists(config_path):
             return jsonify({'success': False, 'error': 'experiment-config.json not found'}), 500
         
@@ -917,7 +920,7 @@ def add_psychopy_procedure():
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         
-        instructions_path = os.path.join('frontend', 'public', 'instruction-steps.json')
+        instructions_path = os.path.join('experiments', 'instruction-steps.json')
         instructions = {}
         
         if os.path.exists(instructions_path):
@@ -1150,7 +1153,25 @@ def import_emotibit_csv() -> Response:
             "message": "All file uploads failed.", 
             "errors": errors
         }), 400
-    
+
+@app.route('/api/experiment-config', methods=['GET'])
+def get_experiment_config():
+    """Serve experiment configuration from backend"""
+    try:
+        config_path = os.path.join('experiments', 'experiment-config.json')
+        
+        if not os.path.exists(config_path):
+            return jsonify({'error': 'Configuration not found'}), 404
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        return jsonify(config)
+        
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        return jsonify({'error': 'Failed to load configuration'}), 500
+     
 @app.route('/api/upload-consent-form', methods=['POST'])
 def upload_consent_form():
     """Upload consent form PDF and save to experiment-specific directory"""
