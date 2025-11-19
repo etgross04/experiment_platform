@@ -1,274 +1,3 @@
-/**
- * @file ExperimentBuilder.js
- * @module ExperimentBuilder
- * @overview
- * LLM-ready contract for the Experiment Builder UI. This module implements a drag-and-drop
- * experiment design surface with a procedure library, experiment templates, an add-procedure
- * flow, and a multi-step configuration wizard for each procedure. It persists experiment
- * designs via REST endpoints and loads its library and wizard step schemas from a JSON
- * configuration.
- *
- * Exported UI:
- * - Default React component: ExperimentBuilder
- *
- * Major Responsibilities:
- * - Load experiment configuration (procedures, categories, paradigms, wizard steps) from a public JSON.
- * - Initialize and enforce a sticky, always-first Consent procedure.
- * - Provide a drag-and-drop canvas for assembling procedure instances from a library or templates.
- * - Provide a configuration wizard with validation rules specific to step/procedure types.
- * - Save experiment designs to a backend.
- * - Support adding new PsychoPy-based procedures to the library via REST.
- *
- * Core Invariants:
- * - Consent procedure is always present at index 0, not draggable, and not removable.
- * - Dropping/moving procedures cannot place anything at index 0.
- * - Procedures dragged from the library are instantiated as independent instances with a unique instanceId.
- * - Paradigm drops: consent is filtered out from the incoming set; the existing consent remains at index 0.
- * - Wizard step validation must pass for current step before proceeding or saving.
- *
- * External Effects:
- * - GET /experiment-config.json (cache-busted) to load the entire library/config.
- * - POST /api/experiments to persist experiments.
- * - POST /api/upload-consent-form to upload a PDF for consent.
- * - POST /api/add-psychopy-procedure to define new library procedures.
- * - Uses alert() for user notifications and inline error surfacing for validation.
- *
- * Drag-and-Drop Contracts:
- * - Library procedure drag payload (text/plain): JSON.stringify(ProcedureDefinition)
- * - Paradigm drag payload (text/plain): JSON.stringify({
- *     type: 'paradigm',
- *     paradigmId: string,
- *     paradigm: ParadigmDefinition
- *   })
- * - Canvas internal reorder payload (text/html): index (stringified number) of dragged item.
- * - Consent cannot be dragged; any attempt is prevented.
- * - Drop target index is clamped to >= 1 to protect consent at 0.
- *
- * Wizard Contracts:
- * - Wizard step schemas are provided via Config.wizardSteps keyed by procedure id.
- * - Validation rules are context-aware by both procedureId and stepId (see typedef WizardValidationRules).
- * - Wizard onSave returns a configuration object keyed by stepId; the canvas stores:
- *    - configuration (raw step data by stepId)
- *    - customDuration (optional override derived from configuration.duration?.duration)
- *    - wizardData.rawConfiguration (legacy mirroring of configuration)
- *
- * Persistence Contract (/api/experiments):
- * - Request body:
- *   {
- *     name: string,
- *     procedures: ProcedureInstance[],
- *     created_at: string (ISO timestamp),
- *     estimated_duration: number (sum of customDuration || duration)
- *   }
- * - Response body (success):
- *   { success: true, id: string }
- * - Response body (error):
- *   { success: false, error: string }
- *
- * Add PsychoPy Procedure Contract (/api/add-psychopy-procedure):
- * - Request body: AddProcedureFormData
- * - Response body (success):
- *   { success: true, procedure: ProcedureDefinition }
- * - Response body (error):
- *   { success: false, error: string }
- *
- * Consent Upload Contract (/api/upload-consent-form):
- * - Request body: multipart/form-data with fields:
- *   - file: File (.pdf only)
- *   - experiment_name: string (procedureId at time of upload)
- * - Response body (success):
- *   { success: true, filePath: string }
- * - Response body (error):
- *   { success: false, error: string }
- *
- * Configuration JSON Contract (public/experiment-config.json):
- * {
- *   procedures: {
- *     [procedureId: string]: ProcedureDefinition
- *   },
- *   categories: {
- *     [categoryId: string]: {
- *       name: string,
- *       description?: string,
- *       icon?: string
- *     }
- *   },
- *   paradigms?: {
- *     [paradigmId: string]: ParadigmDefinition
- *   },
- *   wizardSteps?: {
- *     [procedureId: string]: WizardStep[]
- *   }
- * }
- *
- * UX Guarantees:
- * - Library sections (Test Components, Experiment Templates, Add Test Components) are collapsible.
- * - Categories are collapsible; counts reflect dynamic filtering and updates.
- * - Adding a new PsychoPy procedure refreshes config to display the new item.
- * - Canvas displays step count and total estimated minutes.
- * - Selected procedure highlights on canvas; configuration opens a modal wizard.
- *
- * Error Handling:
- * - Network errors and validation failures surface via alert() and inline messages.
- * - Config load failure shows a persistent error state with guidance.
- *
- * @typedef {Object} ProcedureDefinition
- * @property {string} id - Unique identifier (e.g., 'consent', 'demographics', 'prs', 'stressor').
- * @property {string} name - Display name for the library item.
- * @property {number} duration - Default estimated minutes.
- * @property {string} color - Hex color used for UI accent/border.
- * @property {boolean} required - Whether procedure is mandatory by default.
- * @property {string} [category] - Category key linking to Config.categories.
- * @property {Record<string, unknown>} [configuration] - Optional template config.
- *
- * @typedef {Object} ProcedureInstance
- * @property {string} id - Source procedure id (from library).
- * @property {string} name - Instance display name (may differ from library via overrides).
- * @property {number} duration - Default minutes from library.
- * @property {number} [customDuration] - Optional override minutes from wizard config.
- * @property {string} color - Accent color (hex).
- * @property {boolean} required - Mirrors library definition.
- * @property {number} position - Logical position (used during instantiation; not auto-resynced).
- * @property {string} instanceId - Unique runtime id, format: `${id}_${timestamp}[optionalSuffix]`.
- * @property {Record<string, unknown>} configuration - Wizard configuration keyed by stepId.
- * @property {LegacyWizardData} wizardData - Legacy mirror; rawConfiguration duplicates configuration.
- *
- * @typedef {Object} LegacyWizardData
- * @property {?FileList} surveyFiles
- * @property {?string} standardFields
- * @property {?string} questionOrder
- * @property {?boolean} enableBranching
- * @property {?string} consentMethod
- * @property {?File|string} consentDocument
- * @property {?string} consentFilePath
- * @property {?string} consentLink
- * @property {?boolean} requireSignature
- * @property {?string[]} selectedSensors
- * @property {?number} recordingDuration
- * @property {?string} baselineTask
- * @property {boolean} usePsychoPy
- * @property {?string} psychopyInstructions
- * @property {?string} sartVersion
- * @property {?number|string} targetDigit
- * @property {Record<string, unknown>} rawConfiguration
- *
- * @typedef {Object} ParadigmDefinition
- * @property {string} name
- * @property {string} [description]
- * @property {string} [icon]
- * @property {string} color
- * @property {Array<{
- *   id: string,
- *   customName?: string,
- *   customDuration?: number,
- *   preConfigured?: Record<string, unknown>
- * }>} procedures - Ordered references to procedures. 'consent' will be ignored when dropped.
- *
- * @typedef {Object} WizardStep
- * @property {string} id - Step id (e.g., 'document', 'survey-method', 'survey-link', 'media-selection', 'question-set', 'instructions', 'psychopy-setup', 'task-setup', 'stressor-type', 'order', 'task-description', 'sensors', 'duration', 'survey-details', 'validation', 'setup-instructions').
- * @property {string} title - Step title.
- * @property {string} [description] - Optional step help text.
- *
- * @typedef {Object} WizardValidationRules
- * @description Validation logic enforced before navigating forward or saving:
- * - consent/document:
- *    - consentMethod === 'upload' => consentFile must be present after successful upload
- *    - consentMethod === 'link'   => consentLink must be a non-empty URL
- * - survey/survey-details:
- *    - surveyName non-empty
- *    - googleFormUrl must match /^https:\/\/docs\.google\.com\/forms\/d\/e\/[^/]+\/viewform/
- * - demographics/survey-method + survey-link:
- *    - If surveyMethod === 'google_embedded' => googleFormUrl must match the Google Forms pattern
- *    - Else => externalLink must be non-empty URL
- * - main-task/task-description:
- *    - conditionMarker non-empty
- * - break/media-selection:
- *    - selectedVideo non-empty
- * - stressor/duration:
- *    - duration integer within [1, 60]
- *
- * @typedef {Object} AddProcedureFormData
- * @property {string} name - Procedure name (required).
- * @property {number} duration - Expected duration minutes (>= 1).
- * @property {string} category - Category id (required).
- * @property {string} color - Hex color (default '#8B5CF6').
- * @property {boolean} required - Whether the procedure is required by default.
- * @property {string[]} instructionSteps - Non-empty strings; at least one required.
- *
- * @typedef {Object} CategoryDefinition
- * @property {string} name
- * @property {string} [description]
- * @property {string} [icon]
- *
- * @typedef {Object} Config
- * @property {Record<string, ProcedureDefinition>} procedures
- * @property {Record<string, CategoryDefinition>} categories
- * @property {Record<string, ParadigmDefinition>} [paradigms]
- * @property {Record<string, WizardStep[]>} [wizardSteps]
- *
- * @typedef {Object} ExperimentSaveRequest
- * @property {string} name - Experiment name (non-empty).
- * @property {ProcedureInstance[]} procedures - Ordered list; consent must be at [0].
- * @property {string} created_at - ISO timestamp.
- * @property {number} estimated_duration - Sum of customDuration || duration.
- *
- * @callback OnBack
- * @description Invoked when user clicks the "Back to Home" button.
- *
- * @callback OnConfigureProcedure
- * @param {ProcedureInstance} procedure - Procedure instance to configure.
- *
- * @callback OnWizardSave
- * @param {Record<string, unknown>} configuration - Wizard configuration keyed by step id.
- *
- * @callback OnProcedureAdded
- * @param {ProcedureDefinition} newProcedure - New library item returned by backend.
- *
- * @component ExperimentBuilder
- * @public
- * @param {Object} props
- * @param {OnBack} props.onBack - Navigate to the previous screen.
- * @returns {JSX.Element}
- *
- * @usage
- * <ExperimentBuilder onBack={() => navigate('/')} />
- *
- * @internal-components
- * - AddProcedureForm({ onClose, onProcedureAdded, config })
- *   - Validates AddProcedureFormData, submits to /api/add-psychopy-procedure; on success triggers onProcedureAdded then onClose.
- *
- * - ExampleExperimentView({ onDragStart, onParadigmDragStart, config, onRefreshConfig })
- *   - Renders library by categories, paradigms, and an "Add PsychoPy Procedure" entrypoint.
- *   - Drag payloads: procedure (ProcedureDefinition), paradigm (type: 'paradigm').
- *
- * - ExperimentCanvas({
- *     selectedProcedures, setSelectedProcedures,
- *     onConfigureProcedure,
- *     selectedProcedureId, setSelectedProcedureId,
- *     config, experimentName, setExperimentName
- *   })
- *   - Enforces consent invariants; handles external drops and internal reorders; persists via /api/experiments.
- *
- * - ProcedureWizard({ procedure, onClose, onSave, config })
- *   - Drives multi-step configuration with validation; returns config via onSave.
- *
- * - WizardStepContent({ stepId, procedureId, value, configuration, onChange })
- *   - Renders per-step forms and invokes onChange with updated partial config objects per step id.
- *
- * Initialization Details:
- * - On first load and after config fetched, a consent instance is inserted at index 0.
- * - Consent instance is built from config.procedures.consent if present, else a default shape:
- *   id 'consent', name 'Consent Form', duration 5, color '#3B82F6', required true.
- *
- * Performance/State Notes:
- * - Config fetch is cache-busted with ?t=Date.now().
- * - Category expand/collapse state resets when config changes.
- * - Drag handlers avoid JSON parsing unless needed.
- *
- * Accessibility/UX Notes:
- * - Uses keyboard-inaccessible drag-and-drop; consider enhancing for accessibility as needed.
- * - Error/success feedback uses alert() and inline text; can be replaced with toasts.
- */
 import React, { useState, useEffect, useRef } from 'react';
 import './ExperimentBuilder.css';
 
@@ -377,6 +106,148 @@ function createLegacyWizardData(configuration = {}) {
     targetDigit: null,
     rawConfiguration: configuration
   };
+}
+
+function TemplateSaveWizard({ onClose, onSave, config }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    category: '',
+    color: '#8B5CF6',
+    useExistingCategory: true
+  });
+
+  // Get existing paradigm categories from config
+  const existingCategories = config?.paradigms ? Object.keys(config.paradigms) : [];
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.name.trim()) {
+      alert('Please enter a template name');
+      return;
+    }
+    if (!formData.category.trim()) {
+      alert('Please select or enter a category');
+      return;
+    }
+    onSave(formData);
+  };
+
+  return (
+    <div className="wizard-overlay">
+      <div className="wizard-modal">
+        <div className="wizard-header">
+          <h2>Save as Experiment Template</h2>
+          <button onClick={onClose} className="close-btn">✕</button>
+        </div>
+
+        <div className="wizard-content">
+          <p style={{ marginBottom: '1.5rem', color: '#64748b' }}>
+            Save this experiment design as a reusable template that will appear in the "Experiment Templates" section.
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label>Template Name *</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                placeholder="e.g., Stress Induction Protocol"
+              />
+              <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
+                This name will appear when users browse templates
+              </small>
+            </div>
+
+            <div className="form-group">
+              <label>Description</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                placeholder="Describe this experimental template and when it should be used..."
+                rows="3"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Template Category *</label>
+              <div className="radio-group" style={{ marginBottom: '1rem' }}>
+                <label className="radio-label">
+                  <input 
+                    type="radio"
+                    name="categoryType"
+                    checked={formData.useExistingCategory}
+                    onChange={() => setFormData({...formData, useExistingCategory: true, category: ''})}
+                  />
+                  Use existing category
+                </label>
+                <label className="radio-label">
+                  <input 
+                    type="radio"
+                    name="categoryType"
+                    checked={!formData.useExistingCategory}
+                    onChange={() => setFormData({...formData, useExistingCategory: false, category: ''})}
+                  />
+                  Create new category
+                </label>
+              </div>
+
+              {formData.useExistingCategory ? (
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({...formData, category: e.target.value})}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">Select a category...</option>
+                  {existingCategories.map(cat => (
+                    <option key={cat} value={cat}>
+                      {config.paradigms[cat].name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={formData.category}
+                  onChange={(e) => setFormData({...formData, category: e.target.value})}
+                  placeholder="e.g., Attention Training, Memory Tasks, Custom Protocol"
+                />
+              )}
+              <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
+                {formData.useExistingCategory 
+                  ? 'Choose a category where this template will appear' 
+                  : 'Create a new category - it will appear as a new template group'}
+              </small>
+            </div>
+
+            <div className="form-group">
+              <label>Color Theme</label>
+              <input
+                type="color"
+                value={formData.color}
+                onChange={(e) => setFormData({...formData, color: e.target.value})}
+                style={{ width: '100px', height: '40px' }}
+              />
+              <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
+                This color will be used for the template's visual identification
+              </small>
+            </div>
+
+            <button type="submit" className="wizard-btn primary">
+              Save Template
+            </button>
+          </form>
+        </div>
+
+        <div className="wizard-footer">
+          <button onClick={onClose} className="wizard-btn secondary">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function AddProcedureForm({ onClose, onProcedureAdded, config }) {
@@ -953,7 +824,12 @@ function ExperimentCanvas({
   setSelectedProcedureId,
   config,
   experimentName,
-  setExperimentName
+  setExperimentName,
+  isEditMode,
+  editingExperimentId,
+  setIsEditMode,
+  setEditingExperimentId,
+  setShowTemplateSaveWizard
 }) {
   const [draggedIndex, setDraggedIndex] = useState(null);
 
@@ -1144,6 +1020,14 @@ function ExperimentCanvas({
       return;
     }
 
+    // If in edit mode, show confirmation
+    if (isEditMode) {
+      const confirmed = window.confirm(
+        `This will overwrite the existing experiment "${experimentName}".\n\nAre you sure you want to save these changes?`
+      );
+      if (!confirmed) return;
+    }
+
     // Extract data collection methods from the data-collection procedure
     const dataCollectionProc = selectedProcedures.find(proc => proc.id === 'data-collection');
     const collectionMethods = dataCollectionProc?.configuration?.['collection-methods'] || {
@@ -1154,16 +1038,21 @@ function ExperimentCanvas({
     };
 
     const experimentData = {
+      id: isEditMode ? editingExperimentId : undefined,
       name: experimentName,
       procedures: selectedProcedures,
-      dataCollectionMethods: collectionMethods,  // Use exactly what user configured
+      dataCollectionMethods: collectionMethods,
       created_at: new Date().toISOString(),
       estimated_duration: selectedProcedures.reduce((total, proc) => total + (proc.customDuration || proc.duration), 0)
     };
 
     try {
-      const response = await fetch('/api/experiments', {
-        method: 'POST',
+      const endpoint = isEditMode 
+        ? `/api/experiments/${editingExperimentId}` 
+        : '/api/experiments';
+      
+      const response = await fetch(endpoint, {
+        method: isEditMode ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1173,9 +1062,19 @@ function ExperimentCanvas({
       const result = await response.json();
 
       if (response.ok && result.success) {
-        alert('Experiment saved successfully! 🎉');
+        alert(isEditMode 
+          ? 'Experiment updated successfully! 🎉' 
+          : 'Experiment saved successfully! 🎉'
+        );
         console.log('Experiment saved with ID:', result.id);
-        // No reset - user can continue editing or save variations
+        
+        // If we were in edit mode, exit edit mode after successful save
+        if (isEditMode) {
+          setIsEditMode(false);
+          setEditingExperimentId(null);
+          // Clear URL parameters
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
       } else {
         throw new Error(result.error || 'Failed to save experiment');
       }
@@ -1199,10 +1098,14 @@ function ExperimentCanvas({
             onChange={(e) => setExperimentName(e.target.value)}
             className="experiment-name-input"
           />
+          <button onClick={() => setShowTemplateSaveWizard(true)} className="save-template-btn">
+            Save as Template
+          </button>
           <button onClick={saveExperiment} className="save-btn">
-            Save Experiment
+            {isEditMode ? 'Update Experiment' : 'Save Experiment'}
           </button>
         </div>
+
         {selectedProcedures.length > 0 && (
           <div className="design-stats">
             {selectedProcedures.length} steps • ~{totalDuration} minutes
@@ -1808,7 +1711,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
     case 'survey-details':
       return (
         <div className="form-group">
-          <label>📋 Survey Name *</label>
+          <label>Survey Name *</label>
           <input 
             type="text"
             placeholder="e.g., PSS-10, STAI, Custom Questionnaire"
@@ -2528,7 +2431,13 @@ function ExperimentBuilder({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  const [showTemplateSaveWizard, setShowTemplateSaveWizard] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingExperimentId, setEditingExperimentId] = useState(null);
+  const [isLoadingEdit, setIsLoadingEdit] = useState(false);
+  
   const initializedRef = useRef(false);
+  const editIdRef = useRef(null);
 
   const loadConfig = async () => {
     try {
@@ -2551,14 +2460,77 @@ function ExperimentBuilder({ onBack }) {
     loadConfig();
   }, []);
 
+  const loadExperimentForEdit = async (experimentId) => {
+    setIsLoadingEdit(true);
+    try {
+      const response = await fetch(`/api/experiments/${experimentId}`);
+      if (!response.ok) {
+        throw new Error('Failed to load experiment');
+      }
+      const experiment = await response.json();
+      
+      setIsEditMode(true);
+      setEditingExperimentId(experimentId);
+      setExperimentName(experiment.name);
+      
+      const reconstructedProcedures = experiment.procedures.map(proc => ({
+        ...proc,
+        instanceId: proc.instanceId || `${proc.id}_${Date.now()}_${Math.random()}`
+      }));
+
+      const hasDataCollection = reconstructedProcedures.some(p => p.id === 'data-collection');
+      if (!hasDataCollection) {
+        reconstructedProcedures.unshift(createDataCollectionProcedure());
+      }
+
+      setSelectedProcedures(reconstructedProcedures);
+      initializedRef.current = true;
+      
+    } catch (error) {
+      console.error('Error loading experiment for edit:', error);
+      alert('Failed to load experiment for editing. Returning to runner.');
+      window.history.back();
+    } finally {
+      setIsLoadingEdit(false);
+    }
+  };
+
   useEffect(() => {
-    if (!initializedRef.current && config && selectedProcedures.length === 0) {
+    if (!initializedRef.current && config && selectedProcedures.length === 0 && !editIdRef.current) {
       setSelectedProcedures([
         createDataCollectionProcedure(),
-        createInitialConsentProcedure(config)]);
+        createInitialConsentProcedure(config)
+      ]);
       initializedRef.current = true;
     }
   }, [config, selectedProcedures.length]);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const editId = urlParams.get('edit');
+    
+    if (editId && config && editId !== editIdRef.current && !isLoadingEdit) {
+      editIdRef.current = editId;
+      loadExperimentForEdit(editId);
+    }
+    
+    if (!editId && editIdRef.current) {
+      editIdRef.current = null;
+      if (selectedProcedures.length > 2) {
+        const confirmReset = window.confirm('Reset to new experiment?');
+        if (confirmReset) {
+          setSelectedProcedures([
+            createDataCollectionProcedure(),
+            createInitialConsentProcedure(config)
+          ]);
+          setExperimentName('');
+          setIsEditMode(false);
+          setEditingExperimentId(null);
+          initializedRef.current = false;
+        }
+      }
+    }
+  }, [config, isLoadingEdit, selectedProcedures.length]);
 
   const handleDragStart = (e, procedure) => {
     e.dataTransfer.setData('text/plain', JSON.stringify(procedure));
@@ -2612,6 +2584,63 @@ function ExperimentBuilder({ onBack }) {
     );
   };
 
+  // Function to handle template save
+  const handleTemplateSave = async (templateData) => {
+    if (selectedProcedures.length === 0) {
+      alert('Please add at least one procedure to your template');
+      return;
+    }
+
+    // Filter out data-collection from procedures
+    const templateProcedures = selectedProcedures
+      .filter(proc => proc.id !== 'data-collection')
+      .map((proc, index) => ({
+        id: proc.id,
+        position: index,
+        customName: proc.name !== config.procedures[proc.id]?.name ? proc.name : undefined,
+        customDuration: proc.customDuration !== proc.duration ? proc.customDuration : undefined,
+        preConfigured: Object.keys(proc.configuration || {}).length > 0 ? proc.configuration : undefined
+      }));
+
+    // If using existing category, send just the category key
+    // If creating new category, send the new name
+    const categoryToSend = templateData.useExistingCategory 
+      ? templateData.category  // This will be like 'priming', 'dual-task', etc.
+      : templateData.category.toLowerCase().replace(/\s+/g, '-');  // Convert "New Category" to "new-category"
+
+    const template = {
+      name: templateData.name,
+      description: templateData.description || `Experimental paradigm: ${templateData.name}`,
+      category: categoryToSend,
+      color: templateData.color || '#8B5CF6',
+      procedures: templateProcedures
+    };
+
+    try {
+      const response = await fetch('/api/save-template', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(template)
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        alert('Template saved successfully! 🎉');
+        // Reload config to show new template
+        await loadConfig();
+        setShowTemplateSaveWizard(false);
+      } else {
+        throw new Error(result.error || 'Failed to save template');
+      }
+    } catch (error) {
+      console.error('Error saving template:', error);
+      alert(`Error saving template: ${error.message}`);
+    }
+  };
+
   const handleProcedureAdded = (newProcedure) => {
     // Update config state directly without reloading from file
     setConfig(prevConfig => {
@@ -2642,7 +2671,7 @@ function ExperimentBuilder({ onBack }) {
     });
   };
 
-  if (loading) {
+  if (loading || isLoadingEdit) {
     return (
       <div className="experiment-builder">
         <div className="builder-header">
@@ -2700,6 +2729,11 @@ function ExperimentBuilder({ onBack }) {
           config={config}
           experimentName={experimentName}
           setExperimentName={setExperimentName}
+          isEditMode={isEditMode}
+          editingExperimentId={editingExperimentId}
+          setIsEditMode={setIsEditMode}
+          setEditingExperimentId={setEditingExperimentId}
+          setShowTemplateSaveWizard={setShowTemplateSaveWizard}
         />
       </div>
 
@@ -2708,6 +2742,14 @@ function ExperimentBuilder({ onBack }) {
           procedure={currentWizardProcedure}
           onClose={() => setCurrentWizardProcedure(null)}
           onSave={handleWizardSave}
+          config={config}
+        />
+      )}
+
+      {showTemplateSaveWizard && (
+        <TemplateSaveWizard
+          onClose={() => setShowTemplateSaveWizard(false)}
+          onSave={handleTemplateSave}
           config={config}
         />
       )}

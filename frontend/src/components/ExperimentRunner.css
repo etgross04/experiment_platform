@@ -230,6 +230,38 @@
   transform: none;
 }
 
+.edit-button {
+  background-color: #f59e0b;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 10px;
+}
+
+.edit-button:hover:not(:disabled) {
+  background-color: #d97706;
+  transform: translateY(-1px);
+}
+
+.edit-button:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.run-controls {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
 .run-status {
   margin-top: 15px;
   padding: 15px;

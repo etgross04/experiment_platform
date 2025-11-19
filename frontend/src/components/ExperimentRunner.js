@@ -22,6 +22,16 @@ function ExperimentRunner({ onBack }) {
     }
   };
 
+  const editExperiment = () => {
+    if (!selectedExperiment) {
+      alert('Please select an experiment first');
+      return;
+    }
+    
+    // Navigate to experiment builder with edit parameter
+    window.location.href = `/?view=builder&edit=${selectedExperiment.id}`;
+  };
+
   const runExperiment = async () => {
     if (!selectedExperiment) {
       alert('Please select an experiment first');
@@ -110,6 +120,13 @@ function ExperimentRunner({ onBack }) {
               {/* <p>{selectedExperiment.description}</p> */}
               
               <div className="run-controls">
+                <button 
+                  className="edit-button"
+                  onClick={editExperiment}
+                  disabled={!selectedExperiment}
+                >
+                  Edit Experiment
+                </button>
                 <button 
                   className="run-button"
                   onClick={runExperiment}

@@ -20,6 +20,7 @@ from werkzeug.utils import secure_filename
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from TranscriptionManager import TranscriptionManager
 import re
+import subprocess
 
 # SSE connection management
 session_queues = {}
@@ -67,6 +68,42 @@ CORS(app, resources={
     }
 })
 
+@app.route('/api/launch-emotibit-osc', methods=['POST'])
+def launch_emotibit_osc():
+    try:
+        # TODO This will need to account for windows extenstions when ported
+        executable_path = "/executables/EmotiBitOscilloscope.app"
+        subprocess.Popen([executable_path])
+        
+        return jsonify({
+            "success": True, 
+            "message": "Oscilloscope launched successfully"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False, 
+            "error": str(e)
+        }), 500
+    
+@app.route('/api/launch-emotibit-parser', methods=['POST'])
+def launch_emotibit_parser():
+    try:
+        # TODO This will need to account for windows extenstions when ported
+        executable_path = "/executables/EmotiBitDataParser.app"
+        subprocess.Popen([executable_path])
+        
+        return jsonify({
+            "success": True, 
+            "message": "Oscilloscope launched successfully"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False, 
+            "error": str(e)
+        }), 500
+    
 @app.route('/api/upload-survey', methods=['POST'])
 def upload_survey():
     """
@@ -362,6 +399,7 @@ def process_audio_files() -> Response:
     subject_id = subject_manager.subject_id
     audio_folder = audio_file_manager.audio_folder
     experiment_name = subject_manager.experiment_name
+    experimenter_name = subject_manager.experimenter_name
     trial_name = subject_manager.trial_name
 
     date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -385,14 +423,14 @@ def process_audio_files() -> Response:
                 emotion2, confidence2 = emo_list[1][0], emo_list[1][1]
                 emotion3, confidence3 = emo_list[2][0], emo_list[2][1]
 
-                data_rows.append([timestamp, file, transcription, emotion1, confidence1, emotion2, confidence2, emotion3, confidence3])
+                data_rows.append([timestamp, file, experimenter_name, transcription, emotion1, confidence1, emotion2, confidence2, emotion3, confidence3])
 
     data_rows.sort(key=lambda x: x[0])
     csv_path = os.path.join(subject_manager.subject_folder, f"{date}_{experiment_name}_{trial_name}_{subject_id}_SER.csv")
 
     with open(csv_path, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(["Timestamp", "File_Name", "Transcription", "SER_Emotion_Label_1", "SER_Confidence_1", "SER_Emotion_Label_2", "SER_Confidence_2", "SER_Emotion_Label_3", "SER_Confidence_3" ])
+        writer.writerow(["Timestamp", "File_Name", "Experimenter_Name", "Transcription", "SER_Emotion_Label_1", "SER_Confidence_1", "SER_Emotion_Label_2", "SER_Confidence_2", "SER_Emotion_Label_3", "SER_Confidence_3" ])
         for row in data_rows:
             writer.writerow(row)   
 
@@ -786,6 +824,7 @@ def save_experiment():
             'created_at': data.get('created_at', datetime.now(timezone.utc).isoformat()),
             'updated_at': datetime.now(timezone.utc).isoformat(),
             'estimated_duration': data.get('estimated_duration', 0),
+            'dataCollectionMethods': data.get('dataCollectionMethods', {}),
             'procedures': []
         }
         
@@ -812,6 +851,85 @@ def save_experiment():
         print(f"Error saving experiment: {e}")
         return jsonify({'error': f'Failed to save experiment: {str(e)}'}), 500
 
+@app.route('/api/save-template', methods=['POST'])
+def save_template():
+    """
+    Save an experiment configuration as a reusable template.
+    
+    REQUEST JSON:
+        {
+            "name": str,
+            "description": str,
+            "category": str,
+            "color": str,
+            "procedures": list,
+            "dataCollectionMethods": dict
+        }
+    
+    RETURNS:
+        200: {"success": true, "template_id": str}
+        400: {"error": str}
+        500: {"error": str}
+    """
+    try:
+        data = request.json
+        
+        if not data.get('name'):
+            return jsonify({'error': 'Template name is required'}), 400
+        
+        if not data.get('category'):
+            return jsonify({'error': 'Category is required'}), 400
+        
+        # Generate template ID
+        template_name = data['name'].strip()
+        template_id = re.sub(r'[^a-zA-Z0-9\s-]', '', template_name.lower())
+        template_id = re.sub(r'\s+', '-', template_id)
+        template_id = template_id.strip('-')
+        
+        if not template_id:
+            return jsonify({'error': 'Invalid template name'}), 400
+        
+        config_path = os.path.join('experiments', 'experiment-config.json')
+        
+        if not os.path.exists(config_path):
+            return jsonify({'error': 'experiment-config.json not found'}), 500
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # Ensure paradigms section exists
+        if 'paradigms' not in config:
+            config['paradigms'] = {}
+        
+        # Check if template already exists
+        if template_id in config['paradigms']:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            template_id = f"{template_id}_{timestamp}"
+        
+        # Create template entry
+        config['paradigms'][template_id] = {
+            'name': data['name'],
+            'description': data.get('description', f"Experimental paradigm: {data['name']}"),
+            'color': data.get('color', '#8B5CF6'),
+            'procedures': data.get('procedures', [])
+        }
+        
+        # Save updated config
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        
+        print(f"Template saved: {template_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Template saved successfully',
+            'template_id': template_id
+        })
+        
+    except Exception as e:
+        print(f"Error saving template: {str(e)}")
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+    
 @app.route('/api/add-psychopy-procedure', methods=['POST'])
 def add_psychopy_procedure():
     """
@@ -1033,6 +1151,85 @@ def get_experiment(experiment_id):
         print(f"Error loading experiment {experiment_id}: {e}")
         return jsonify({'error': 'Failed to load experiment'}), 500
 
+@app.route('/api/experiments/<experiment_id>', methods=['PUT'])
+def update_experiment(experiment_id):
+    """
+    Update an existing experiment template.
+    
+    CONTRACT:
+        Route: /api/experiments/<experiment_id>
+        Method: PUT
+        
+    REQUEST JSON:
+        {
+            "name": str,
+            "procedures": list,
+            "dataCollectionMethods": dict,
+            "created_at": str,
+            "estimated_duration": int
+        }
+    
+    RETURNS:
+        200: {"success": true, "id": str, "message": str, "filepath": str}
+        400: {"error": str}
+        404: {"error": "Experiment not found"}
+        500: {"error": str}
+    """
+    try:
+        filepath = os.path.join(EXPERIMENT_TEMPLATES_DIR, f"{experiment_id}.json")
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'Experiment not found'}), 404
+        
+        data = request.json
+        
+        if not data.get('name'):
+            return jsonify({'error': 'Experiment name is required'}), 400
+        
+        if not data.get('procedures') or len(data.get('procedures', [])) == 0:
+            return jsonify({'error': 'At least one procedure is required'}), 400
+        
+        # Load existing experiment to preserve creation date
+        with open(filepath, 'r') as f:
+            existing_experiment = json.load(f)
+        
+        # Update experiment data
+        experiment = {
+            'id': experiment_id,
+            'name': data['name'],
+            'description': data.get('description', f"Experiment: {data['name']}"),
+            'created_at': existing_experiment.get('created_at', datetime.now(timezone.utc).isoformat()),
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+            'estimated_duration': data.get('estimated_duration', 0),
+            'dataCollectionMethods': data.get('dataCollectionMethods', {}),
+            'procedures': []
+        }
+        
+        for proc_data in data['procedures']:
+            procedure = process_procedure_for_psychopy(proc_data)
+            experiment['procedures'].append(procedure)
+        
+        experiment['procedures'].sort(key=lambda x: x.get('position', 0))
+        
+        # Save updated experiment
+        with open(filepath, 'w') as f:
+            json.dump(experiment, f, indent=2)
+        
+        print(f"Experiment updated: {experiment_id}")
+        
+        return jsonify({
+            'success': True,
+            'id': experiment_id,
+            'message': 'Experiment updated successfully',
+            'filepath': filepath
+        })
+        
+    except Exception as e:
+        print(f"Error updating experiment: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to update experiment: {str(e)}'}), 500
+    
 @app.route('/import_emotibit_csv', methods=['POST'])
 def import_emotibit_csv() -> Response:
     """
