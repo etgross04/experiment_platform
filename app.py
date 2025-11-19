@@ -68,12 +68,19 @@ CORS(app, resources={
     }
 })
 
+@app.route('/experiments/<path:filename>')
+def serve_experiments(filename):
+    experiments_dir = os.path.join(os.getcwd(), 'experiments')
+    return send_from_directory(experiments_dir, filename)
+
 @app.route('/api/launch-emotibit-osc', methods=['POST'])
 def launch_emotibit_osc():
     try:
-        # TODO This will need to account for windows extenstions when ported
-        executable_path = "/executables/EmotiBitOscilloscope.app"
-        subprocess.Popen([executable_path])
+        # Path relative to Flask app root
+        executable_path = os.path.join(os.getcwd(), 'executables', 'EmotiBitOscilloscope.app')
+        
+        # On macOS, use 'open' command to launch .app bundles
+        subprocess.Popen(['open', executable_path])
         
         return jsonify({
             "success": True, 
@@ -81,6 +88,7 @@ def launch_emotibit_osc():
         }), 200
         
     except Exception as e:
+        print(f"Error launching EmotiBit Oscilloscope: {e}")
         return jsonify({
             "success": False, 
             "error": str(e)

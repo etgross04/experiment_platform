@@ -33,11 +33,33 @@ function PreTestInstructionsWizard({
   const [instructionsLoading, setInstructionsLoading] = useState(true);
   const [instructionsError, setInstructionsError] = useState(null);
 
+  const launchEmotibitOscilloscope = async () => {
+    try {
+      const response = await fetch('/api/launch-emotibit-osc', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('EmotiBit Oscilloscope launched:', data.message);
+      } else {
+        console.error('Failed to launch EmotiBit Oscilloscope');
+        alert('Failed to launch EmotiBit Oscilloscope. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error launching EmotiBit Oscilloscope:', error);
+      alert('Error launching EmotiBit Oscilloscope. Please try again.');
+    }
+  };
+
   useEffect(() => {
     const loadInstructionSteps = async () => {
       try {
         setInstructionsLoading(true);
-        const response = await fetch('/instruction-steps.json');
+        const response = await fetch('/experiments/instruction-steps.json');
         
         if (!response.ok) {
           throw new Error(`Failed to load instruction steps: ${response.status} ${response.statusText}`);
@@ -132,17 +154,51 @@ function PreTestInstructionsWizard({
   };
 
   const renderInstructionStep = (stepData) => {
+    // Check if we're on sensor-placement step 3 (Signal Verification)
+    const isSensorStep3 = currentStep === 3; // Step 0 is consent, 1-3 are sensor steps
+    const lines = stepData.content.split('\n');
+    
     return (
       <div className="instruction-step-content">
         <div className="instruction-label">
           <h4>{stepData.label}</h4>
         </div>
         <div className="instruction-content">
-          {stepData.content.split('\n').map((line, index) => (
-            <p key={index} className={line.trim() === '' ? 'instruction-spacing' : 'instruction-line'}>
-              {line}
-            </p>
-          ))}
+          {lines.map((line, index) => {
+            const isEmptyLine = line.trim() === '';
+            // Show button after "2. Open the EmotiBit monitoring software on the computer"
+            const shouldShowButton = isSensorStep3 && line.includes('2. Open the EmotiBit monitoring software');
+            
+            return (
+              <React.Fragment key={index}>
+                <p className={isEmptyLine ? 'instruction-spacing' : 'instruction-line'}>
+                  {line}
+                </p>
+                {shouldShowButton && (
+                  <div style={{ margin: '10px 0 10px 20px' }}>
+                    <button 
+                      onClick={launchEmotibitOscilloscope}
+                      style={{
+                        backgroundColor: '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        padding: '10px 20px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        transition: 'background-color 0.2s'
+                      }}
+                      onMouseOver={(e) => e.target.style.backgroundColor = '#2563eb'}
+                      onMouseOut={(e) => e.target.style.backgroundColor = '#3b82f6'}
+                    >
+                      🖥️ Launch EmotiBit Oscilloscope
+                    </button>
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
     );
@@ -452,7 +508,7 @@ function ProcedureInstructionWizard({
     const loadInstructionSteps = async () => {
       try {
         setInstructionsLoading(true);
-        const response = await fetch('/instruction-steps.json');
+        const response = await fetch('/experiments/instruction-steps.json');
         
         if (!response.ok) {
           throw new Error(`Failed to load instruction steps: ${response.status} ${response.statusText}`);
