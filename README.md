@@ -80,8 +80,24 @@ This platform provides researchers with a comprehensive toolkit for designing an
 - Python 3.8+
 - Node.js 14+
 - npm or yarn
+- hdf5 and h5py
 
 ### Backend Setup
+Install Homebrew
+
+Install hdf5:
+```
+   brew install hdf5
+```
+
+Export the hdf5 path for h5py:
+```
+   export HDF5_DIR=$(brew --prefix hdf5)
+```
+Install h5py:
+```
+   pip install --no-cach-dir h5py
+```
 
 Install Python dependencies:
 ```
