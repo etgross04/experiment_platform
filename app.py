@@ -21,6 +21,9 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from TranscriptionManager import TranscriptionManager
 import re
 import subprocess
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # SSE connection management
 session_queues = {}
@@ -206,6 +209,7 @@ def push_to_database():
             'database': os.getenv('DB_NAME', 'sensor_data'),
             'user': os.getenv('DB_USER', 'postgres'),
             'password': os.getenv('DB_PASSWORD', ''),
+            'port': os.getenv('DB_PORT', '5432') 
         }
         
         uploader = DatabaseUploader(db_config)
@@ -215,7 +219,9 @@ def push_to_database():
                 'experiment_name': session_data.get('experiment_folder_name'),
                 'trial_name': session_data.get('trial_name'),
                 'experimenter_name': session_data.get('experimenter_name'),
-                'subject_id': session_data.get('participant_info', {}).get('email')
+                'subject_id': session_data.get('participant_info', {}).get('email'),
+                'pid': session_data.get('participant_info', {}).get('pid'),
+                'class_name': session_data.get('participant_info', {}).get('sona_class')
             }
             
             result = uploader.upload_subject_directory(subject_dir, session_metadata)
