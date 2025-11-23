@@ -1561,7 +1561,9 @@ useEffect(() => {
     console.log('Completed procedures:', completedProcedures);
     
     const filteredProcedures = experimentData.procedures.filter(
-      procedure => procedure.id !== 'consent' && !procedure.name?.toLowerCase().includes('consent')
+      procedure => procedure.id !== 'consent' && 
+                   procedure.id !== 'data-collection' && 
+                   !procedure.name?.toLowerCase().includes('consent')
     );
     
     const actualIndex = experimentData.procedures.findIndex(proc => proc === filteredProcedures[index]);
@@ -1661,16 +1663,20 @@ useEffect(() => {
     
     // Filter out consent procedures - same filter you're already using
     const filteredProcedures = experimentData.procedures.filter(
-      procedure => procedure.id !== 'consent' && !procedure.name?.toLowerCase().includes('consent')
+      procedure => procedure.id !== 'consent' && 
+                   procedure.id !== 'data-collection' && 
+                   !procedure.name?.toLowerCase().includes('consent')
     );
     
     if (filteredProcedures.length === 0) {
       return { name: 'No procedures', fullName: '', estimatedDuration: 0, selectedMetrics: [] };
     }
     
-    // If current procedure is consent, show first non-consent procedure
+    // If current procedure is consent or data-collection, show first non-consent/non-data-collection procedure
     const currentProc = experimentData.procedures[currentProcedure];
-    if (currentProc && (currentProc.id === 'consent' || currentProc.name?.toLowerCase().includes('consent'))) {
+    if (currentProc && (currentProc.id === 'consent' || 
+                        currentProc.id === 'data-collection' || 
+                        currentProc.name?.toLowerCase().includes('consent'))) {
       return filteredProcedures[0];
     }
     
@@ -1682,9 +1688,11 @@ useEffect(() => {
   const isExperimentComplete = () => {
     if (!experimentData || !experimentData.procedures) return false;
     
-    // Filter out consent procedures (same logic you're using elsewhere)
+    // Filter out consent and data-collection procedures (same logic you're using elsewhere)
     const filteredProcedures = experimentData.procedures.filter(
-      procedure => procedure.id !== 'consent' && !procedure.name?.toLowerCase().includes('consent')
+      procedure => procedure.id !== 'consent' && 
+                   procedure.id !== 'data-collection' && 
+                   !procedure.name?.toLowerCase().includes('consent')
     );
     
     // Check if all non-consent procedures are completed
@@ -1995,8 +2003,10 @@ useEffect(() => {
           {experimentData && experimentData.procedures ? (
           <div className="procedure-list">
             {experimentData.procedures
-              .filter(procedure => procedure.id !== 'consent' && !procedure.name?.toLowerCase().includes('consent'))
-              .map((procedure, index) => {
+            .filter(procedure => procedure.id !== 'consent' && 
+                                 procedure.id !== 'data-collection' && 
+                                 !procedure.name?.toLowerCase().includes('consent'))
+            .map((procedure, index) => {
                 // Get the actual index for this procedure
                 const actualIndex = experimentData.procedures.findIndex(proc => proc === procedure);
                 
