@@ -98,8 +98,8 @@ def launch_emotibit_osc():
 def launch_emotibit_parser():
     try:
         # TODO This will need to account for windows extenstions when ported
-        executable_path = "/executables/EmotiBitDataParser.app"
-        subprocess.Popen([executable_path])
+        executable_path = os.path.join(os.getcwd(), 'executables', 'EmotiBitDataParser.app')
+        subprocess.Popen(['open', executable_path])
         
         return jsonify({
             "success": True, 
@@ -111,74 +111,133 @@ def launch_emotibit_parser():
             "success": False, 
             "error": str(e)
         }), 500
+
+@app.route('/api/convert-hdf5-to-csv', methods=['POST'])
+def convert_hdf5_to_csv():
+    global event_manager, vernier_manager, polar_manager
     
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ACTIVE_SESSIONS:
+            return jsonify({'error': 'Invalid or missing session ID'}), 400
+        
+        converted_files = []
+        errors = []
+        
+        # Convert EventManager HDF5 to CSV
+        if event_manager and hasattr(event_manager, 'hdf5_to_csv'):
+            try:
+                event_manager.hdf5_to_csv()
+                converted_files.append('EmotiBit event data')
+                print("✓ EventManager HDF5 converted to CSV")
+            except Exception as e:
+                errors.append(f"EventManager conversion failed: {str(e)}")
+                print(f"✗ EventManager conversion error: {e}")
+        
+        # Convert VernierManager HDF5 to CSV
+        if vernier_manager and hasattr(vernier_manager, 'hdf5_to_csv'):
+            try:
+                vernier_manager.hdf5_to_csv()
+                converted_files.append('Vernier respiratory data')
+                print("✓ VernierManager HDF5 converted to CSV")
+            except Exception as e:
+                errors.append(f"VernierManager conversion failed: {str(e)}")
+                print(f"✗ VernierManager conversion error: {e}")
+        
+        # Convert PolarManager HDF5 to CSV
+        if polar_manager and hasattr(polar_manager, 'hdf5_to_csv'):
+            try:
+                polar_manager.hdf5_to_csv()
+                converted_files.append('Polar HR data')
+                print("✓ PolarManager HDF5 converted to CSV")
+            except Exception as e:
+                errors.append(f"PolarManager conversion failed: {str(e)}")
+                print(f"✗ PolarManager conversion error: {e}")
+        
+        if not converted_files and not errors:
+            return jsonify({
+                'success': False,
+                'error': 'No active data managers found'
+            }), 400
+        
+        message = f"Successfully converted {len(converted_files)} file(s) to CSV"
+        if errors:
+            message += f". {len(errors)} error(s) occurred."
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'converted_files': converted_files,
+            'errors': errors if errors else None
+        })
+        
+    except Exception as e:
+        print(f"Error in convert_hdf5_to_csv: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Conversion failed: {str(e)}'}), 500
+
+
+@app.route('/api/push-to-database', methods=['POST'])
+def push_to_database():
+    """
+    Push CSV data to PostgreSQL database.
+    Uses DatabaseUploader to handle all database operations.
+    """
+    from DatabaseUploader import DatabaseUploader
+    
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ACTIVE_SESSIONS:
+            return jsonify({'error': 'Invalid or missing session ID'}), 400
+        
+        session_data = ACTIVE_SESSIONS[session_id]
+        subject_dir = session_data.get('subject_dir')
+        
+        if not subject_dir or not os.path.exists(subject_dir):
+            return jsonify({'error': 'Subject directory not found'}), 400
+        
+        db_config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'database': os.getenv('DB_NAME', 'sensor_data'),
+            'user': os.getenv('DB_USER', 'postgres'),
+            'password': os.getenv('DB_PASSWORD', ''),
+        }
+        
+        uploader = DatabaseUploader(db_config)
+        
+        try:
+            session_metadata = {
+                'experiment_name': session_data.get('experiment_folder_name'),
+                'trial_name': session_data.get('trial_name'),
+                'experimenter_name': session_data.get('experimenter_name'),
+                'subject_id': session_data.get('participant_info', {}).get('email')
+            }
+            
+            result = uploader.upload_subject_directory(subject_dir, session_metadata)
+            
+            return jsonify({
+                'success': True,
+                'message': f"Uploaded {result['uploaded_count']} file(s) to database",
+                'details': result,
+                'subject_dir': subject_dir
+            })
+            
+        finally:
+            uploader.close()
+        
+    except Exception as e:
+        print(f"Error in push_to_database: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Database push failed: {str(e)}'}), 500
+      
 @app.route('/api/upload-survey', methods=['POST'])
 def upload_survey():
-    """
-    CONTRACT: Upload a single survey file (generic form/survey config) and persist it to ./surveys/.
-
-    ENDPOINT:
-        Route: /api/upload-survey
-        Method: POST
-        Auth: None (CORS open) – caller must be trusted environment.
-        Content-Type: multipart/form-data
-
-    INPUT (multipart/form-data):
-        file: Required. A single file field. Filename must be non-empty.
-              No explicit MIME/type validation beyond presence and name.
-    
-    PRECONDITIONS:
-        - Request contains 'file' key in request.files.
-        - file.filename is not empty.
-        - Server process has write permission in current working directory.
-
-    PROCESS:
-        1. Validate presence of file field.
-        2. Validate non-empty filename.
-        3. Ensure ./surveys directory exists (idempotent mkdir).
-        4. Sanitize filename via secure_filename.
-        5. Save file to ./surveys/<sanitized_filename> (overwrite if same name already exists).
-    
-    POSTCONDITIONS:
-        - File persisted to disk at surveys/<sanitized_filename>.
-        - No database state altered.
-    
-    OUTPUT (JSON):
-        Success (200):
-            {
-              "success": true,
-              "filename": "<sanitized_filename>"
-            }
-        Failure (400):
-            {
-              "error": "No file provided" | "No file selected"
-            }
-
-    ERROR CONDITIONS:
-        400: Missing file field, empty filename.
-        (Other IO errors not explicitly surfaced; any unexpected exception would propagate if added later.)
-
-    SIDE EFFECTS:
-        - Creates ./surveys directory if absent.
-        - Writes file to filesystem.
-
-    IDEMPOTENCY:
-        - Repeated identical uploads overwrite existing file silently (non-idempotent w.r.t content integrity).
-
-    SECURITY NOTES:
-        - Filename sanitized; no path traversal.
-        - No size limit enforced; large uploads may impact disk.
-
-    PERFORMANCE:
-        - O(file_size) disk write. No additional processing.
-
-    EXAMPLE (curl):
-        curl -X POST -F "file=@survey.json" http://localhost:5001/api/upload-survey
-
-    RETURNS:
-        Flask Response (application/json).
-    """
-
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     
@@ -222,77 +281,6 @@ def set_condition():
         
 @app.route('/record_task_audio', methods=['POST'])
 def record_task_audio():
-    """
-    CONTRACT: Start or stop an individual task audio recording and log metadata.
-
-    ENDPOINT:
-        Route: /record_task_audio
-        Method: POST
-        Auth: None (CORS open)
-        Content-Type: application/json
-
-    REQUEST JSON:
-        {
-          "action": "start" | "stop",
-          "question": <int|str>,           # Required when action=start/stop
-          "event_marker": <str>,           # Base marker; question appended internally
-          "condition": <str|null>          # Optional condition label
-        }
-
-    PRECONDITIONS:
-        - recording_manager initialized
-        - event_manager & vernier_manager initialized (if respiratory data used)
-        - subject_manager.subject_id set (for file naming on stop)
-        - audio_file_manager configured (for saving on stop)
-
-    PROCESS (action=start):
-        1. Begin recording via recording_manager.start_recording()
-        2. Compose event_marker = f"{event_marker}_{question}"
-        3. Set event markers on event_manager & vernier_manager
-        4. Poll until stream_is_active or timeout (10s)
-
-    PROCESS (action=stop):
-        1. Stop recording via recording_manager.stop_recording()
-        2. Derive timestamps (start, end) from recording_manager
-        3. Build filename: <subject_id>_<start_timestamp>_<event_marker>.wav
-        4. Append row to subject CSV (Timestamp, Time_Stopped, Event_Marker, Condition, Audio_File)
-        5. Persist audio file via audio_file_manager.save_audio_file()
-
-    POSTCONDITIONS (start):
-        - Recording stream active (or 400 on failure)
-        - Event marker updated
-
-    POSTCONDITIONS (stop):
-        - Audio file written
-        - Subject CSV row appended
-
-    RESPONSES:
-        200 start: {"message": "Recording started..."}
-        200 stop:  {"message": "Recording stopped."}
-        400 invalid action: {"message": "Invalid action."}
-        400 failure: {"error": "Error processing request."}
-
-    ERROR CONDITIONS:
-        - Invalid action value
-        - Stream start timeout
-        - Exceptions in recording or file operations
-
-    SIDE EFFECTS:
-        - Mutates global managers' state
-        - Writes WAV file and CSV row
-
-    STATE MUTATIONS:
-        - recording_manager.stream_is_active toggled
-        - event_manager.event_marker updated
-        - vernier_manager.event_marker updated (if present)
-
-    IDEMPOTENCY:
-        - start: non-idempotent (duplicate calls create overlapping attempts)
-        - stop: non-idempotent (multiple stops may duplicate logging)
-
-    RETURNS:
-        Flask JSON response (status code per outcome).
-    """
     global recording_manager, audio_file_manager, subject_manager, vernier_manager, event_manager
     data = request.get_json()
     action = data.get('action')
@@ -318,13 +306,25 @@ def record_task_audio():
         elif action == 'stop':
             recording_manager.stop_recording()
             ts = recording_manager.timestamp
-            end_time = recording_manager.end_timestamp
+            uts = recording_manager.unix_timestamp
+            end_time = recording_manager.end_timestamp_iso
+            end_time_unix = recording_manager.end_timestamp_unix
+
             id = subject_manager.subject_id
 
             file_name = f"{id}_{ts}_{event_marker}.wav"
 
             # Header structure: 'Timestamp', 'Event_Marker', 'Transcription', 'SER_Emotion', 'SER_Confidence'
-            subject_manager.append_data({'Timestamp': ts, 'Time_Stopped': end_time, 'Event_Marker': event_marker, 'Condition': condition, 'Audio_File': file_name})
+            subject_manager.append_data({
+                                            'unix_timestamp': uts,
+                                            'timestamp': ts, 
+                                            'time_stopped': end_time, 
+                                            'time_stopped_unix': end_time_unix,
+                                            'event_marker': event_marker, 
+                                            'condition': condition, 
+                                            'audio_file': file_name
+                                        })
+            
             audio_file_manager.save_audio_file(file_name)
 
             return jsonify({'message': 'Recording stopped.'}), 200
@@ -349,20 +349,6 @@ def get_audio_devices() -> Response:
 
 @app.route('/api/audio-files/<question_set>', methods=['GET'])
 def get_audio_files(question_set):
-    """
-    Retrieves a list of audio files for a given question set, excluding specific files.
-    Args:
-        question_set (str): The name of the question set whose audio files are to be retrieved.
-    Returns:
-        flask.Response: A JSON response containing:
-            - success (bool): Indicates if the operation was successful.
-            - question_files (list): Sorted list of audio file names (excluding specified files).
-            - total_questions (int): Number of audio files returned.
-            - question_set (str): The question set name.
-        If the audio directory is not found, returns a 404 error response.
-        If an exception occurs, returns a 500 error response with the error message.
-    """
-    
     try:
         audio_dir = os.path.join('static', 'audio_files', question_set)
         
@@ -395,55 +381,94 @@ def process_audio_files() -> Response:
     """
     Processes audio files in the current subject's audio folder, transcribes them, 
     predicts the top 3 emotion and confidence scores, and writes the results to a CSV file.
+    
     Returns:
         Response: A JSON response indicating the success of the operation with a message.
     """
     import csv, datetime
     global subject_manager, audio_file_manager, ser_manager
-   
-    data_rows = []
+    
+    try:
+        data_rows = []
 
-    # TODO: CHECK TO SEE IF THE METADATA IS NEEDED FOR THIS CSV
-    subject_id = subject_manager.subject_id
-    audio_folder = audio_file_manager.audio_folder
-    experiment_name = subject_manager.experiment_name
-    experimenter_name = subject_manager.experimenter_name
-    trial_name = subject_manager.trial_name
+        subject_id = subject_manager.subject_id
+        audio_folder = audio_file_manager.audio_folder
+        experiment_name = subject_manager.experiment_name
+        trial_name = subject_manager.trial_name
+        experimenter_name = subject_manager.experimenter_name
 
-    date = datetime.datetime.now().strftime("%Y-%m-%d")
+        date = datetime.datetime.now().strftime("%Y-%m-%d")
 
-    emotion1 = None
-    confidence1 = None
-    emotion2 = None 
-    confidence2 = None
-    emotion3 =  None 
-    confidence3 = None
+        for file in os.listdir(audio_folder):
+            if file.endswith(".wav"):
+                parts = file.split("_")
+                if parts[0] == subject_id and len(parts) > 2:
+                    transcription = transcribe_audio(os.path.join(audio_folder, file), timeout_seconds=240)
+                    emo_list = ser_manager.predict_emotion(os.path.join(audio_folder, file))
+                    timestamp_iso = parts[1]
+                    
+                    try:
+                        timestamp_iso_clean = timestamp_iso.replace('Z', '+00:00')
+                        dt = datetime.datetime.fromisoformat(timestamp_iso_clean)
+                        timestamp_unix = dt.timestamp()
+                    except Exception as parse_error:
+                        print(f"Warning: Could not parse timestamp from {file}: {parse_error}")
+                        timestamp_unix = None  # Store None if parsing fails
 
-    for file in os.listdir(audio_folder):
-        if file.endswith(".wav"):
-            parts = file.split("_")
-            if parts[0] == subject_id and len(parts) > 2:
-                transcription = transcribe_audio(os.path.join(audio_folder, file), timeout_seconds=240)
-                emo_list = ser_manager.predict_emotion(os.path.join(audio_folder, file))
-                timestamp = parts[1]
+                    emotion1, confidence1 = emo_list[0][0], emo_list[0][1]
+                    emotion2, confidence2 = emo_list[1][0], emo_list[1][1]
+                    emotion3, confidence3 = emo_list[2][0], emo_list[2][1]
 
-                emotion1, confidence1 = emo_list[0][0], emo_list[0][1]
-                emotion2, confidence2 = emo_list[1][0], emo_list[1][1]
-                emotion3, confidence3 = emo_list[2][0], emo_list[2][1]
+                    data_rows.append([
+                        experiment_name,      # 1. experiment_name
+                        trial_name,           # 2. trial_name
+                        subject_id,           # 3. subject_id
+                        experimenter_name,    # 4. experimenter_name
+                        timestamp_unix,       # 5. timestamp_unix 
+                        timestamp_iso,        # 6. timestamp_iso (was timestamp)
+                        file,                 # 7. file_name
+                        transcription,        # 8. transcription
+                        emotion1,             # 9. SER_Emotion_Label_1
+                        confidence1,          # 10. SER_Confidence_1
+                        emotion2,             # 11. SER_Emotion_Label_2
+                        confidence2,          # 12. SER_Confidence_2
+                        emotion3,             # 13. SER_Emotion_Label_3
+                        confidence3           # 14. SER_Confidence_3
+                    ])
 
-                data_rows.append([timestamp, file, experimenter_name, transcription, emotion1, confidence1, emotion2, confidence2, emotion3, confidence3])
+        data_rows.sort(key=lambda x: x[4] if x[4] is not None else 0)   # Sort by timestamp
+        
+        csv_path = os.path.join(subject_manager.subject_folder, f"{date}_{experiment_name}_{trial_name}_{subject_id}_SER.csv")
 
-    data_rows.sort(key=lambda x: x[0])
-    csv_path = os.path.join(subject_manager.subject_folder, f"{date}_{experiment_name}_{trial_name}_{subject_id}_SER.csv")
+        with open(csv_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            
+            writer.writerow([
+                "experiment_name", 
+                "trial_name", 
+                "subject_id", 
+                "experimenter_name", 
+                "timestamp_unix",         
+                "timestamp_iso",          
+                "file_name", 
+                "transcription", 
+                "SER_Emotion_Label_1", 
+                "SER_Confidence_1", 
+                "SER_Emotion_Label_2", 
+                "SER_Confidence_2", 
+                "SER_Emotion_Label_3", 
+                "SER_Confidence_3" 
+            ])
+            
+            for row in data_rows:
+                writer.writerow(row)   
 
-    with open(csv_path, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Timestamp", "File_Name", "Experimenter_Name", "Transcription", "SER_Emotion_Label_1", "SER_Confidence_1", "SER_Emotion_Label_2", "SER_Confidence_2", "SER_Emotion_Label_3", "SER_Confidence_3" ])
-        for row in data_rows:
-            writer.writerow(row)   
-
-    print(f"CSV file created: {csv_path}")
-    return jsonify({'message': 'Audio files processed successfully.', 'path': csv_path}), 200
+        print(f"CSV file created: {csv_path}")
+        return jsonify({'message': 'Audio files processed successfully.', 'path': csv_path}), 200
+    
+    except Exception as e:
+        print(f"Error processing audio files: {e}")
+        return jsonify({'error': f'Failed to process audio files: {str(e)}'}), 500
 
 @app.route('/set_device', methods=['POST'])
 def set_device() -> Response:
@@ -492,16 +517,6 @@ def reset_audio():
 
 @app.route('/test_audio', methods=['POST'])
 def test_audio():
-    """
-    Handles the audio testing workflow by stopping the recording, resampling the audio file,
-    and transcribing the result. Returns the transcription text as a JSON response.
-    Returns:
-        Response: JSON response containing the transcription result or an error message.
-    Raises:
-        400: If the recording or transcription manager is not initialized.
-        500: If an exception occurs during processing.
-    """
-    
     global recording_manager, transcription_manager, audio_file_manager
 
     if recording_manager is None:
@@ -528,19 +543,6 @@ def test_audio():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 def transcribe_audio(file, timeout_seconds=30):
-    """
-    Ultra-fast transcription function with compression optimization.
-    
-    Args:
-        file: The audio file to be transcribed
-        timeout_seconds (int): Not used by Fast API, but kept for compatibility
-    Returns:
-        str: The transcribed text or error message
-
-    NOTE: This is the generalized transcription endpoint. User for all other transcriptions
-        aside from the "test audio" procedure. test_audio() is used once
-        at the begining of the experiment
-    """
     global transcription_manager, recording_manager, audio_file_manager
     
     if recording_manager is None:
@@ -569,18 +571,6 @@ def transcribe_audio(file, timeout_seconds=30):
         return "Sorry, something went wrong with the transcription."
               
 def generate_experiment_id(experiment_name=""):
-    """
-    Generates a unique experiment ID based on the provided experiment name and the current UTC timestamp.
-    The experiment name is sanitized to include only alphanumeric characters, spaces, hyphens, and underscores.
-    Spaces are replaced with underscores, and the name is converted to lowercase. If the sanitized name exceeds
-    30 characters, it is truncated. The final ID is constructed by appending a UTC timestamp in the format
-    'YYYYMMDD_HHMMSS' to the sanitized name. If no name is provided, 'experiment' is used as the prefix.
-    Args:
-        experiment_name (str, optional): The name of the experiment. Defaults to an empty string.
-    Returns:
-        str: A unique experiment ID string.
-    """
-    
     clean_name = "".join(c for c in experiment_name if c.isalnum() or c in (' ', '-', '_')).strip()
     clean_name = clean_name.replace(' ', '_').lower()
     
@@ -625,20 +615,6 @@ def trigger_audio_test(session_id):
 
 @app.route('/api/experiments', methods=['GET'])
 def list_experiments():
-    """
-    Lists all experiment templates in the specified directory, excluding 'paradigms.json'.
-    For each experiment JSON file, loads its metadata and returns a JSON response containing:
-        - id: Unique identifier of the experiment.
-        - name: Name of the experiment.
-        - description: Description of the experiment (empty string if not present).
-        - created_at: ISO-formatted creation timestamp (from file metadata if not present in JSON).
-        - estimated_duration: Estimated duration of the experiment (default 0 if not present).
-        - procedure_count: Number of procedures in the experiment.
-        - procedures: List of procedure names.
-    The experiments are sorted by creation date in descending order.
-    In case of error, returns an empty JSON list.
-    """
-    
     experiments = []
     
     try:
@@ -679,16 +655,6 @@ def list_experiments():
 
 @app.route('/api/experiments/<experiment_id>/run', methods=['POST'])
 def run_experiment(experiment_id):
-    """
-    Starts a new experiment session based on the provided experiment ID.
-    This function loads the experiment template from a JSON file, creates a new session with a unique session ID,
-    initializes session and completion tracking, and instantiates required modules for the experiment.
-    If the experiment template is not found or an error occurs, an appropriate error response is returned.
-    Args:
-        experiment_id (str): The unique identifier for the experiment to be started.
-    Returns:
-        flask.Response: A JSON response containing either the session details on success or an error message on failure.
-    """
     try:
         template_path = os.path.join(EXPERIMENT_TEMPLATES_DIR, f"{experiment_id}.json")
         
@@ -708,9 +674,9 @@ def run_experiment(experiment_id):
             'status': 'created',
             'created_at': datetime.now(timezone.utc).isoformat(),
             'template': template,
-            'experiment_folder_name': None,  # Will be set by experimenter
-            'trial_name': None,  # Will be set by experimenter
-            'subject_folder': None,  # Will be set when subject submits form
+            'experiment_folder_name': None,  
+            'trial_name': None,  
+            'subject_folder': None,  
             'participant_info': None
         }
     
@@ -735,21 +701,6 @@ def run_experiment(experiment_id):
     
 @app.route('/api/sessions/<session_id>/set-experiment-trial', methods=['POST'])
 def set_experiment_trial(session_id):
-    """
-    Sets the experiment and trial names for a given session.
-    This function validates the session, extracts experiment and trial names from the request,
-    sanitizes and formats them, updates the session data, creates the necessary directories,
-    and updates the subject manager with the new experiment and trial names.
-    Args:
-        session_id (str): The unique identifier for the active session.
-    Returns:
-        Response: A Flask JSON response indicating success or failure, with appropriate status codes:
-            - 200: Success, experiment and trial set.
-            - 400: Missing experiment or trial name.
-            - 404: Session not found.
-            - 500: Internal server error.
-    """
-    
     try:
         if session_id not in ACTIVE_SESSIONS:
             return jsonify({'error': 'Session not found'}), 404
@@ -861,24 +812,6 @@ def save_experiment():
 
 @app.route('/api/save-template', methods=['POST'])
 def save_template():
-    """
-    Save an experiment configuration as a reusable template.
-    
-    REQUEST JSON:
-        {
-            "name": str,
-            "description": str,
-            "category": str,
-            "color": str,
-            "procedures": list,
-            "dataCollectionMethods": dict
-        }
-    
-    RETURNS:
-        200: {"success": true, "template_id": str}
-        400: {"error": str}
-        500: {"error": str}
-    """
     try:
         data = request.json
         
@@ -940,33 +873,6 @@ def save_template():
     
 @app.route('/api/add-psychopy-procedure', methods=['POST'])
 def add_psychopy_procedure():
-    """
-    Adds a new PsychoPy procedure to the experiment configuration.
-    This endpoint expects a JSON payload containing the procedure details and instruction steps.
-    It validates the input, updates the experiment-config.json and instruction-steps.json files,
-    and returns a success response with the procedure information.
-    Request JSON Structure:
-            "name": str,                # Name of the procedure (required)
-            "duration": int or str,     # Duration in minutes (required, must be >= 1)
-            "category": str,            # Category of the procedure (required)
-            "required": bool,           # Whether the procedure is required (optional)
-            "instructionSteps": [str]   # List of instruction step strings (required, at least one)
-    Returns:
-        - 200 OK: On success, returns JSON with procedure details and number of instruction steps added.
-        - 400 Bad Request: If required fields are missing or invalid.
-        - 500 Internal Server Error: If there is a server or file error.
-    Errors handled:
-        - Missing or invalid data fields
-        - Invalid duration value
-        - Empty instruction steps
-        - experiment-config.json not found
-        - JSON parsing errors
-        - Other server errors
-    Side Effects:
-        - Updates 'frontend/public/experiment-config.json' with the new procedure.
-        - Updates 'frontend/public/instruction-steps.json' with formatted instruction steps.
-    """
-
     try:
         data = request.get_json()
         
@@ -1240,34 +1146,6 @@ def update_experiment(experiment_id):
     
 @app.route('/import_emotibit_csv', methods=['POST'])
 def import_emotibit_csv() -> Response:
-    """
-    Handles the import of EmotiBit CSV files via POST request.
-    This route allows uploading one or multiple EmotiBit CSV files associated with the current subject.
-    Files are saved to the data folder specified in the global `emotibit_streamer` object, with filenames
-    including the session start time and subject ID. If a file with the same name already exists, a counter
-    is appended to avoid overwriting.
-    Request:
-        - Method: POST
-        - Form Data:
-            - 'emotibit_file': Single file upload (for backward compatibility)
-            - 'emotibit_files': Multiple file upload (list of files)
-    Returns:
-        - 200 OK: On successful upload of one or more files. Returns JSON with file paths and upload details.
-        - 400 Bad Request: If no files are provided, subject information is not set, or all uploads fail.
-        - 200 OK: If some files succeed and some fail, returns details for both successes and errors.
-    Response JSON Example (success):
-        {
-            "message": "File(s) uploaded successfully.",
-            "file_path": "...",           # For single file
-            "file_paths": [...],          # For multiple files
-            "uploaded_files": [...],      # List of uploaded file details
-            "errors": [...]               # List of error messages (if any)
-        }
-    Response JSON Example (failure):
-        {
-            "errors": [...]
-        }
-    """
     global event_manager, subject_manager
     
     if event_manager.data_folder is None:
@@ -1564,16 +1442,6 @@ def initialize_ser_baseline() -> Response:
     
 @app.route('/get_ser_question', methods=['POST'])
 def get_ser_question() -> Response:
-    """
-    Retrieve the current SER (Speech Emotion Recognition) question and increment the question index.
-    This function fetches the current SER question from the test manager's list of questions,
-    increments the question index, and returns the question in a JSON response. If the index
-    exceeds the number of available questions, it stops the recording and resets the index.
-    Returns:
-        Response: A JSON response containing the current question or a completion message.
-    Raises:
-        Exception: If an error occurs during the process, a JSON response with the error message is returned.
-    """
     global test_manager, recording_manager
     
     if test_manager is None:
@@ -1629,18 +1497,6 @@ def get_ser_question() -> Response:
 
 @app.route('/process_ser_answer', methods=['POST'])  
 def process_ser_answer() -> Response:
-    """
-    Processes the user's spoken answer for a SER (Speech Emotion Recognition) question.
-    This function performs the following steps:
-    1. Stops the current audio recording.
-    2. Renames the audio file based on the subject's ID and the current question index.
-    3. Saves the renamed audio file to the appropriate directory.
-    4. Logs the data with timestamp and metadata.
-    Returns:
-        Response: A JSON response with the status of the answer submission.
-            If successful, returns {'status': 'Answer processed successfully.'}.
-            If an error occurs, returns {'status': 'error', 'message': str(e)} with a 400 status code.
-    """
     global subject_manager, recording_manager, audio_file_manager, test_manager
 
     if recording_manager is None:
@@ -1651,7 +1507,8 @@ def process_ser_answer() -> Response:
         
         ts = recording_manager.timestamp
         uts = recording_manager.unix_timestamp
-        end_time = recording_manager.end_timestamp
+        end_time = recording_manager.end_timestamp_iso
+        end_time_unix = recording_manager.end_timestamp_unix
         print(f"Stop time from recording manager: {end_time}")
         
         id = subject_manager.subject_id if subject_manager.subject_id else "unknown"
@@ -1659,21 +1516,19 @@ def process_ser_answer() -> Response:
         question_set = test_manager.current_ser_question_set
         file_name = f"{id}_{ts}_ser_baseline_{question_set}_question_{question_index}.wav"
 
-        # DEBUG
-        print(f"Audio File Name: {file_name}")
-        print(f"Question Set: {question_set}")
-
         if subject_manager:
             subject_manager.append_data({
-                'Unix_Timestamp': uts,
-                'Timestamp': ts, 
-                'Time_Stopped': end_time, 
-                'Event_Marker': f'ser_baseline_{question_set}', 
-                'Condition': 'None', 
-                'Audio_File': file_name,
-                'Question_Set': question_set,
-                'Question_Index': question_index
+                'unix_timestamp': uts,
+                'timestamp': ts, 
+                'time_stopped': end_time, 
+                'time_stopped_unix': end_time_unix,
+                'event_marker': f'ser_baseline_{question_set}', 
+                'condition': 'None', 
+                'audio_file': file_name,
+                'question_set': question_set,
+                'question_index': question_index
             })
+            
         
         if audio_file_manager:
             audio_file_manager.save_audio_file(file_name)
@@ -1972,19 +1827,7 @@ def get_first_question():
 
 @app.route('/confirm_transcription', methods=['POST'])
 def confirm_transcription():
-    """
-    Handles the confirmation of audio transcription for a test session.
-    This function performs the following steps:
-    - Checks if the recording and audio file managers are initialized.
-    - Retrieves test status and time-up flags from the incoming JSON request.
-    - Stops the current recording.
-    - If time is up, sets the current answer to "Time up.".
-    - Otherwise, transcribes the recorded audio and stores the result.
-    - Returns a JSON response with the transcription result and appropriate status/message.
-    Returns:
-        Response: A Flask JSON response containing the transcription, status, and message.
-        If an error occurs, returns a JSON response with error details and a 400 status code.
-    """
+    
     
     global test_manager, recording_manager, audio_file_manager
     
@@ -2074,18 +1917,6 @@ def get_mat_question_sets():
 
 @app.route('/process_answer', methods=['POST'])
 def process_answer():
-    """
-    Endpoint to process an answer submission for the current test question.
-    This function handles the logic for processing answers during a test session, including:
-    - Checking if the test manager is initialized.
-    - Retrieving the current test and question.
-    - Handling the end of a test or practice session, including stopping audio recording, transcribing audio, saving audio files, and logging data.
-    - Processing answers for individual questions, checking correctness, updating question indices, and restarting recordings as needed.
-    - Returning appropriate JSON responses indicating the status of the test, answer correctness, and any errors encountered.
-    Returns:
-        Response: A Flask JSON response containing the status, message, result, and HTTP status code as appropriate.
-    """
-    
     global recording_manager, subject_manager, audio_file_manager, test_manager
     
     if test_manager is None:
@@ -2118,7 +1949,9 @@ def process_answer():
 
             if current_test != 0:
                 ts = recording_manager.timestamp
-                end_time = recording_manager.end_timestamp
+                uts = recording_manager.unix_timestamp
+                end_time = recording_manager.end_timestamp_iso
+                end_time_unix = recording_manager.end_timestamp_unix
                 id = subject_manager.subject_id or "unknown"
                 file_name = f"{id}_{ts}_{current_test_name}_question_{test_manager.current_question_index}.wav"
 
@@ -2127,13 +1960,16 @@ def process_answer():
                     audio_file_manager.save_audio_file(file_name)
 
                 print("Saving data...")
+
                 subject_manager.append_data({
-                    'Timestamp': ts, 
-                    'Time_Stopped': end_time, 
-                    'Event_Marker': current_test_name, 
-                    'Condition': 'None', 
-                    'Audio_File': file_name, 
-                    'Transcription': transcription
+                    'unix_timestamp': uts,
+                    'timestamp': ts, 
+                    'time_stopped': end_time, 
+                    'time_stopped_unix': end_time_unix,
+                    'event_marker': current_test_name, 
+                    'condition': 'None', 
+                    'audio_file': file_name, 
+                    'transcription': transcription
                 })
 
                 return jsonify({
@@ -2152,7 +1988,9 @@ def process_answer():
 
             if current_test != 0:
                 ts = recording_manager.timestamp
-                end_time = recording_manager.end_timestamp
+                uts = recording_manager.unix_timestamp
+                end_time = recording_manager.end_timestamp_iso
+                end_time_unix = recording_manager.end_timestamp_unix
                 id = subject_manager.subject_id or "unknown"
                 file_name = f"{id}_{ts}_{current_test_name}_question_{test_manager.current_question_index}.wav"
 
@@ -2162,12 +2000,14 @@ def process_answer():
 
                 print("Saving data...")
                 subject_manager.append_data({
-                    'Timestamp': ts, 
-                    'Time_Stopped': end_time, 
-                    'Event_Marker': current_test_name, 
-                    'Condition': 'None', 
-                    'Audio_File': file_name,
-                    'Transcription': transcription
+                    'timestamp': ts, 
+                    'unix_timestamp': uts,
+                    'time_stopped': end_time, 
+                    'time_stopped_unix': end_time_unix,
+                    'event_marker': current_test_name, 
+                    'condition': 'None', 
+                    'audio_file': file_name,
+                    'transcription': transcription
                 })
 
             correct_answer = questions[test_manager.current_question_index]['answer']
@@ -2222,25 +2062,6 @@ def close_session(session_id):
 
 @app.route('/api/sessions/<session_id>/participant', methods=['POST'])
 def save_participant_info(session_id):
-    """
-    Saves participant information for a given session.
-    This function performs the following steps:
-    - Validates the session ID and checks if the experiment and trial names are set.
-    - Extracts participant information from the request JSON payload.
-    - Validates the participant's email and generates a unique subject folder name.
-    - Creates the subject directory structure for storing participant data.
-    - Sets up subject, event, vernier, and audio file managers with the appropriate data folders and filenames.
-    - Updates the session data with participant information and status.
-    - Writes the updated session data to a JSON file in the subject directory.
-    - Broadcasts a 'participant_registered' event to the session.
-    Args:
-        session_id (str): The unique identifier for the session.
-    Returns:
-        Response: A Flask JSON response indicating success or failure, with relevant messages and data.
-        On success: {'success': True, 'message': ..., 'subject_folder': ..., 'subject_dir': ...}
-        On failure: {'error': ...}, with appropriate HTTP status code.
-    """
-    
     try:
         if session_id not in ACTIVE_SESSIONS:
             return jsonify({'error': 'Session not found'}), 404
@@ -2277,24 +2098,39 @@ def save_participant_info(session_id):
             'subject_dir': subject_dir
         })
 
-        if session_data.get('experimenter_name'):
-            subject_manager.experimenter_name = session_data['experimenter_name']
-            event_manager.experimenter_name = session_data['experimenter_name']
-            if vernier_manager is not None:
-                vernier_manager.experimenter_name = session_data['experimenter_name']
-            if polar_manager is not None:
-                polar_manager.experimenter_name = session_data['experimenter_name']
-
-        # Always set for every experiment
-        event_manager.set_data_folder(subject_dir)
-        event_manager.set_filenames(email)
+        experiment_name = session_data.get('experiment_folder_name')
+        trial_name = session_data.get('trial_name')
+        experimenter_name = session_data.get('experimenter_name', 'Unknown')
         
+        event_manager.set_metadata(
+            experiment_name=experiment_name,
+            trial_name=trial_name,
+            subject_id=email,
+            experimenter_name=experimenter_name
+        )
+        event_manager.set_data_folder(subject_dir)
+        event_manager.set_filenames()
+
         if vernier_manager is not None:
+            vernier_manager.set_metadata(
+                experiment_name=experiment_name,
+                trial_name=trial_name,
+                subject_id=email,
+                experimenter_name=experimenter_name
+            )
             vernier_manager.set_data_folder(subject_dir)
-            vernier_manager.set_filenames(email)
+            vernier_manager.set_filenames()
+
         if polar_manager is not None:
+            polar_manager.set_metadata(
+                experiment_name=experiment_name,
+                trial_name=trial_name,
+                subject_id=email,
+                experimenter_name=experimenter_name
+            )
             polar_manager.set_data_folder(subject_dir)
-            polar_manager.set_filenames(email)
+            polar_manager.set_filenames()
+
         if audio_file_manager is not None:
             audio_file_manager.set_audio_folder(subject_dir)
         
@@ -2338,17 +2174,6 @@ def save_participant_info(session_id):
 
 @app.route('/api/sessions/<session_id>/info', methods=['GET'])
 def get_session_info(session_id):
-    """
-    Retrieve information about a specific session.
-    Args:
-        session_id (str): The unique identifier for the session.
-    Returns:
-        Response: A Flask JSON response containing session information if found,
-                  or an error message with the appropriate HTTP status code.
-    Raises:
-        Exception: If an unexpected error occurs during retrieval.
-    """
-    
     try:
         if session_id not in ACTIVE_SESSIONS:
             return jsonify({'error': 'Session not found'}), 404
@@ -2499,19 +2324,6 @@ def validate_json_file(filepath):
 
 @app.route('/api/upload-config', methods=['POST'])
 def upload_config():
-    """
-    Handles the upload of a configuration JSON file via an HTTP request.
-    - Expects a file in the 'file' field of the request.
-    - Optionally accepts a 'configType' form field to categorize the config.
-    - Validates that the file is present, has a valid filename, and is a JSON file.
-    - Saves the file with a unique name in the TEST_FILES_DIR directory.
-    - Validates the JSON content of the uploaded file.
-    - Removes the file if the JSON is invalid.
-    - Returns a JSON response indicating success or failure, including error messages and file details.
-    Returns:
-        Response: A Flask JSON response with success status, error messages, and file information.
-    """
-
     from werkzeug.utils import secure_filename
     import uuid
 
@@ -2614,26 +2426,6 @@ def complete_experiment(session_id):
         return jsonify({'error': f'Failed to complete experiment: {str(e)}'}), 500
 
 def reset_experiment_managers():
-    """
-    Resets all experiment manager instances to None and stops any active streams or recordings.
-    This function attempts to gracefully stop any ongoing processes managed by the global
-    experiment manager objects, such as event streaming, audio recording, and vernier operations.
-    After stopping these processes, it sets all manager references to None to ensure a clean state.
-    If an error occurs during the reset process, it prints an error message.
-    Globals Modified:
-        recording_manager
-        audio_file_manager
-        vernier_manager
-        test_manager
-        transcription_manager
-        ser_manager
-        form_manager
-        subject_manager
-        event_manager
-    Exceptions:
-        Prints an error message if any exception is raised during the reset process.
-    """
-    
     global recording_manager, audio_file_manager, vernier_manager,test_manager, polar_manager
     global transcription_manager, ser_manager, form_manager, subject_manager, event_manager
 

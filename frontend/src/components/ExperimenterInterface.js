@@ -669,22 +669,21 @@ function SettingsPanel({
   allowEventMarkers, 
   launchSubjectInterface, 
   currentSession,
-  // Shared state props
   emotiBitRunning,
   vernierRunning,
   selectedMicrophone,
   audioDevices,
   isLoadingDevices,
-  // Shared functions
   toggleEmotiBit,
   toggleVernier,
   handleMicrophoneChange,
   resetAudio,
   testAudio,
-  // Add these new props
   openEmotibitFilePicker,
   uploadEmotibitStatus,
-  emotibitFilePath
+  emotibitFilePath,
+  convertDataToCsv,
+  pushDataToDatabase
 }) {
   const [audioProcessingStatus, setAudioProcessingStatus] = useState('');
   const [audioProcessingPath, setAudioProcessingPath] = useState('');
@@ -841,6 +840,28 @@ function SettingsPanel({
                 </div>
               )}
             </div>
+            <div className="metric-control-group">
+              <h5>Data Processing</h5>
+              <p style={{ fontSize: '0.8rem', color: '#666', margin: '0 0 10px 0' }}>
+                Convert HDF5 data files to CSV format and push to database.
+              </p>
+              
+              <button
+                onClick={convertDataToCsv}
+                className="process-audio-btn"
+                style={{ backgroundColor: '#007bff', marginBottom: '8px' }}
+              >
+                Convert Data to CSV
+              </button>
+              
+              <button
+                onClick={pushDataToDatabase}
+                className="process-audio-btn"
+                style={{ backgroundColor: '#007bff' }}
+              >
+              Push Data to Database
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -959,6 +980,74 @@ function ExperimenterInterface() {
 
   const [uploadEmotibitStatus, setUploadEmotibitStatus] = useState('');
   const [emotibitFilePath, setEmotibitFilePath] = useState('');
+
+  const convertDataToCsv = async () => {
+    if (!currentSession) {
+      alert('No active session found');
+      return;
+    }
+
+    if (!window.confirm('Convert all HDF5 data files to CSV? This may take a few moments.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/convert-hdf5-to-csv', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: currentSession
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        alert(`Data conversion successful!\n${data.message}`);
+      } else {
+        alert(`Conversion failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error converting data:', error);
+      alert('Error converting data to CSV. Please try again.');
+    }
+  };
+
+  const pushDataToDatabase = async () => {
+    if (!currentSession) {
+      alert('No active session found');
+      return;
+    }
+
+    if (!window.confirm('Push all CSV data to the PostgreSQL database?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/push-to-database', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: currentSession
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        alert(`Database push successful!\n${data.message}`);
+      } else {
+        alert(`Database push failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error pushing to database:', error);
+      alert('Error pushing data to database. Please try again.');
+    }
+  };
 
   const selectEmotibitFile = async (event) => {
     console.log('selectEmotibitFile called', event);
@@ -1952,44 +2041,68 @@ useEffect(() => {
           <p>No procedures loaded</p>
         )}
         {isExperimentComplete() && (
-          <div className="experiment-completion-section">
-            <div className="complete-message">
-              <h4>Experiment Complete!</h4>
-              <p>All procedures have been completed successfully.</p>
-              
-              <p>If it is available, please upload Biometric Ground Truth data before completing the experiment and resetting.</p>
-              <ul>
-                <li>Copy or move the EmotiBit CSV from the EmotiBit SD card to the desktop or somewhere you can find it</li>
-                <li>Click "Import EmotiBit File" below and browse to that location</li>
-                <li>More than one file may be selected.</li>
-              </ul>
-              <button
-                onClick={openEmotibitFilePicker}
-                className="complete-experiment-btn"
-              > 
-              Import EmotiBit File 
-              </button><br />
-              {uploadEmotibitStatus && (
-                <div className="emotibit-upload-status" style={{ margin: '10px 0' }}>
-                  {uploadEmotibitStatus}
-                </div>
-              )}
-
-              {emotibitFilePath && (
-                <div className="emotibit-file-path" style={{ margin: '10px 0', fontSize: '0.9em' }}>
-                  {emotibitFilePath}
-                </div>
-              )}
-              {/* <p>Data has been saved to: {sessionInfo?.experiment_folder_name}/{sessionInfo?.trial_name}</p> */}
-              <button 
-              onClick={handleCompleteExperiment}
+        <div className="experiment-completion-section">
+          <div className="complete-message">
+            <h4>Experiment Complete!</h4>
+            <p>All procedures have been completed successfully.</p>
+            
+            <p>If it is available, please upload Biometric Ground Truth data before completing the experiment and resetting.</p>
+            <ul>
+              <li>Copy or move the EmotiBit CSV from the EmotiBit SD card to the desktop or somewhere you can find it</li>
+              <li>Click "Import EmotiBit File" below and browse to that location</li>
+              <li>More than one file may be selected.</li>
+            </ul>
+            
+            <button
+              onClick={openEmotibitFilePicker}
               className="complete-experiment-btn"
+            > 
+              Import EmotiBit File 
+            </button><br />
+            
+            {uploadEmotibitStatus && (
+              <div className="emotibit-upload-status" style={{ margin: '10px 0' }}>
+                {uploadEmotibitStatus}
+              </div>
+            )}
+
+            {emotibitFilePath && (
+              <div className="emotibit-file-path" style={{ margin: '10px 0', fontSize: '0.9em' }}>
+                {emotibitFilePath}
+              </div>
+            )}
+
+            <h5 style={{ marginTop: '20px' }}>Data Processing</h5>
+            <p style={{ fontSize: '0.9em' }}>Convert HDF5 files to CSV and push to database:</p>
+            
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button 
+                onClick={convertDataToCsv}
+                className="complete-experiment-btn"
+                style={{ backgroundColor: '#007bff' }}
               >
-                ✅ Complete Experiment & Reset 
+                Convert Data to CSV
+              </button>
+              
+              <button 
+                onClick={pushDataToDatabase}
+                className="complete-experiment-btn"
+                style={{ backgroundColor: '#6f42c1' }}
+              >
+                Push Data to Database
               </button>
             </div>
+
+            <button 
+              onClick={handleCompleteExperiment}
+              className="complete-experiment-btn"
+              style={{ marginTop: '20px' }}
+            >
+              ✅ Complete Experiment & Reset 
+            </button>
           </div>
-        )}
+        </div>
+      )}
         </div>
         <ToolPanel 
           isOpen={isToolPanelOpen} 
@@ -2046,6 +2159,8 @@ useEffect(() => {
         openEmotibitFilePicker={openEmotibitFilePicker}
         uploadEmotibitStatus={uploadEmotibitStatus}
         emotibitFilePath={emotibitFilePath}
+        convertDataToCsv={convertDataToCsv}
+        pushDataToDatabase={pushDataToDatabase}
       />
 
       {showPreTestInstructions && (

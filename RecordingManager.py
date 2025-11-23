@@ -4,89 +4,6 @@ import wave
 import TimestampManager as tm
 
 class RecordingManager():
-    """
-    RecordingManager - Audio Recording Contract for LLM Integration
-    
-    PURPOSE:
-    Thread-safe audio recording manager for experimental sessions and data collection.
-    Provides reliable audio capture with device management and error handling.
-    
-    CONTRACT SPECIFICATION:
-    
-    INITIALIZATION:
-    - REQUIRED: recording_file (str) - Output WAV file path
-    - SETS: sample_rate to device default, initializes threading events
-    - CREATES: PyAudio instance, fetches available audio devices
-    - GUARANTEES: Manager ready for recording operations
-    
-    CORE OPERATIONS:
-    
-    start_recording():
-    - PRECONDITION: Manager initialized, valid audio device available
-    - BEHAVIOR: Creates recording thread, sets timestamps, begins audio capture
-    - POSTCONDITION: stream_is_active=True, recording thread running
-    - THREAD SAFETY: Uses Event synchronization for thread coordination
-    
-    stop_recording():
-    - PRECONDITION: Recording currently active
-    - BEHAVIOR: Signals stop, joins thread, saves WAV file, sets end timestamp
-    - POSTCONDITION: stream_is_active=False, audio saved to file
-    - TIMEOUT: 5 second thread join timeout prevents hanging
-    
-    DEVICE MANAGEMENT:
-    
-    set_device(index):
-    - VALIDATES: Device index exists in available devices
-    - UPDATES: device_index, sample_rate for selected device
-    - ERROR HANDLING: Logs invalid indices, maintains current device
-    
-    fetch_audio_devices():
-    - RETURNS: List of dict {'index': int, 'name': str} for input devices
-    - FILTERS: Only devices with maxInputChannels > 0
-    - ERROR HANDLING: Returns empty list if PyAudio fails
-    
-    AUDIO SPECIFICATIONS:
-    - FORMAT: 16-bit PCM (pyaudio.paInt16)
-    - CHANNELS: 1 (mono)
-    - BUFFER: 1024 frames per buffer
-    - OUTPUT: Standard WAV format
-    
-    PROPERTIES (READ/WRITE):
-    - recording_file: str - WAV output path
-    - timestamp: str - ISO recording start time
-    - unix_timestamp: int - Unix recording start time
-    - end_timestamp: str - ISO recording end time
-    - stream_is_active: bool - Current recording status
-    
-    ERROR HANDLING GUARANTEES:
-    - Audio stream errors: Graceful degradation, detailed logging
-    - Invalid devices: Automatic fallback to first available device
-    - Thread timeouts: 5 second limit prevents deadlocks
-    - File write errors: Exception logging, operation continues
-    
-    THREAD SAFETY CONTRACT:
-    - recording_started_event: Signals recording thread is capturing
-    - stream_ready_event: Signals audio stream is open and ready
-    - stop_event: Signals recording thread should terminate
-    - All operations synchronized using threading.Event objects
-    
-    RESOURCE MANAGEMENT:
-    - PyAudio streams: Automatically closed on stop/error
-    - Threads: Properly joined with timeout protection
-    - WAV files: Atomic write operations with proper headers
-    
-    INTEGRATION POINTS:
-    - TimestampManager: External timestamp utility dependency
-    - File system: WAV file creation at specified path
-    - Audio hardware: Direct interface through PyAudio
-    
-    FAILURE MODES:
-    - No audio devices: Manager initializes but recording fails gracefully
-    - Device disconnection: Error logged, recording stops safely
-    - File write failure: Audio lost but system remains stable
-    - Thread deadlock: Timeout mechanisms prevent infinite waits
-    """
-    
     def __init__(self, recording_file) -> None: 
         self.audio = pyaudio.PyAudio()
         self.sample_rate = int(self.audio.get_default_input_device_info()['defaultSampleRate'])
@@ -101,7 +18,8 @@ class RecordingManager():
         self.audio_devices = self.fetch_audio_devices()
         self._timestamp = None
         self._unix_timestamp = None
-        self._end_timestamp = None
+        self._end_timestamp_iso = None
+        self._end_timestamp_unix = None
         print("Recording manager initialized...")
         print(f"Recording manager's temporary recording file set to {self.recording_file}")
 
@@ -125,12 +43,20 @@ class RecordingManager():
         self._unix_timestamp = value
 
     @property
-    def end_timestamp(self) -> str:
-        return self._end_timestamp
+    def end_timestamp_iso(self) -> str:
+        return self._end_timestamp_iso
     
-    @end_timestamp.setter
-    def end_timestamp(self, value) -> None:
-        self._end_timestamp = value
+    @end_timestamp_iso.setter
+    def end_timestamp_iso(self, value) -> None:
+        self._end_timestamp_iso = value
+
+    @property
+    def end_timestamp_unix(self) -> str:
+        return self._end_timestamp_unix
+    
+    @end_timestamp_unix.setter
+    def end_timestamp_unix(self, value) -> None:
+        self._end_timestamp_unix = value
 
     @property
     def recording_file(self) -> str:
@@ -183,8 +109,9 @@ class RecordingManager():
         self.recording_started_event.clear()
         self.stream_ready_event.clear()
         self.stream_is_active = False
-        self.end_timestamp = tm.get_timestamp("iso")
-        print(f"Recording stopped at {self.end_timestamp}")
+        self.end_timestamp_iso = tm.get_timestamp("iso")
+        self.end_timestamp_unix = tm.get_timestamp("unix")
+        print(f"Recording stopped at {self.end_timestamp_iso}")
 
     def reset_audio_system(self):
         try:

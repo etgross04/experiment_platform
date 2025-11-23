@@ -14,135 +14,14 @@ import scipy.signal as signal
 from bleak import BleakClient, BleakError
 
 class VernierManager:
-    """
-    CONTRACT: VernierManager
-    
-    1. Purpose
-       Manage Vernier Go Direct respiratory (Respiration Rate) and force sensor acquisition,
-       persist streamed data to HDF5, and export to CSV on stop/reset.
-    
-    2. Lifecycle (required call order)
-       a. set_data_folder(subject_folder)            # creates /respiratory_data subfolder
-       b. set_filenames(subject_id)                  # prepares file names (crash index appended)
-       c. initialize_hdf5_file()                     # opens/creates HDF5 + dataset
-       d. start()                                    # discovers + opens device (USB preferred, BLE fallback)
-       e. run()                                      # starts background data collection thread
-       f. (optional) mutate event_marker / condition during run
-       g. stop() or reset()                          # stops streaming, closes device, closes file, converts to CSV
-    
-    3. Responsibilities
-       - Device discovery (USB first, BLE fallback; threshold -100 dBm).
-       - Enable sensors [1,2] (Force, Respiration Rate).
-       - Periodic sampling at 100 ms (10 Hz) after start().
-       - Threaded data collection with safe termination flags.
-       - Append-only structured HDF5 dataset with dynamic resize.
-       - CSV conversion (chunked, 1000 rows per chunk).
-       - Crash detection (device.read() fails or exception).
-       - Crash file versioning (_0, _1, _2 ...).
-       - Timestamping (unix float + ISO 8601).
-       - Event marker + condition tagging per row.
-    
-    4. Non-Responsibilities
-       - Signal processing, filtering, analytics.
-       - Validation of sensor calibration.
-       - External synchronization beyond timestamp tagging.
-       - Automatic re-connection after crash (requires manual restart).
-    
-    5. Public State (mutable at runtime)
-       - event_marker: str (default "start_up").
-       - condition: str (default "None").
-       - device_started: bool (True after successful start()).
-       - running: bool (True while collection thread active).
-    
-    6. Data Schema (HDF5 + CSV; dataset 'data')
-       - timestamp_unix: float64
-       - timestamp: UTF-8 string
-       - force: float32 (NaN if missing)
-       - RR: float32 (NaN if missing)
-       - event_marker: UTF-8 string
-       - condition: UTF-8 string
-    
-    7. Method Contracts (summary)
-       - set_data_folder(path): Creates folder if absent; idempotent.
-       - set_filenames(subject_id): Prepares base filenames; requires data_folder set.
-       - initialize_hdf5_file(): Opens/creates file; prepares extensible dataset.
-       - start(): Returns "Vernier device started." or "Error"; sets device_started.
-       - run(): Spawns daemon thread if device_started; sets running + streaming flags.
-       - stop(): Graceful shutdown; converts file; resets device_started.
-       - reset(): Emergency cleanup; closes file; converts to CSV if possible; clears references.
-       - write_to_hdf5(row): Appends single structured row; silently ignores if uninitialized.
-       - hdf5_to_csv(): Chunked export; no overwrite protection (same filename reused).
-    
-    8. Concurrency Model
-       - Single background thread (Thread, daemon=True) for collect_data().
-       - Synchronization via boolean flags: running, _streaming.
-       - No locks: Assumes single writer thread; main thread invokes control methods.
-    
-    9. Error & Crash Handling
-       - Device read failure or exception triggers: _crashed=True, _num_crashes++, reset().
-       - File version increments via _num_crashes in filenames.
-       - On stop()/reset(): flush + close HDF5 prior to CSV conversion.
-       - Exceptions logged to stdout; no raising upward.
-    
-    10. Guarantees
-       - Never overwrites existing rows in HDF5 (append-only).
-       - CSV reflects final HDF5 state at time of conversion.
-       - Each row contains current event_marker and condition snapshot.
-    
-    11. Invariants
-       - If device_started == False then run() will not start collection.
-       - HDF5 dataset grows monotonically.
-       - _num_crashes increments only on crash path.
-    
-    12. Performance Considerations
-       - Resize per row (amortized cost acceptable for moderate rates).
-       - CSV chunk size (1000) balances memory vs I/O.
-    
-    13. Extensibility Points
-       - Sensor set: modify enable_sensors([...]) in start().
-       - Sampling rate: adjust self._device.start(period=100).
-       - Additional columns: extend dtype + write_to_hdf5().
-       - Reconnection logic: augment collect_data() crash branch.
-    
-    14. Constraints
-       - Requires godirect + bleak + h5py + pandas + numpy installed.
-       - BLE discovery depends on OS BLE stack availability.
-    
-    15. Termination Semantics
-       - stop(): Intended graceful end of session.
-       - reset(): Recovery after crash or manual hard reset.
-    
-    16. File Naming Pattern
-       YYYY-MM-DD_subjectID_respiratory_data_<crashIndex>.h5 / .csv
-    
-    17. Usage Minimal Example
-       manager = VernierManager()
-       manager.set_data_folder(subject_folder)
-       manager.set_filenames(subject_id)
-       manager.initialize_hdf5_file()
-       manager.start()
-       manager.run()
-       # mutate manager.event_marker / manager.condition as needed
-       manager.stop()
-    
-    18. Safety Notes
-       - Call stop() before program exit to ensure flush/CSV export.
-       - After crash (reset called) must re-run start(), run().
-    
-    19. Logging
-       - All operational status printed to stdout; no external logger integrated.
-    
-    20. Versioning
-       - Crash-based numeric suffix only; no semantic versioning.
-    
-    End of CONTRACT.
-    """
     def __init__(self):
         self._device = None
         self._sensors = None
         self._event_marker = "start_up"
         self._condition = 'None'
         self._experimenter_name = None
+        self._experiment_name = None
+        self._trial_name = None
         self._subject_id = None
         self.hdf5_file = None
         self.hdf5_filename = None
@@ -151,7 +30,18 @@ class VernierManager:
         self.thread = None
         self._running = False
         self._streaming = False
-        self._current_row = {"timestamp_unix": None, "timestamp": None, "force": None, "RR": None, "event_marker": self._event_marker, "condition": self._condition, "experimenter_name": None}
+        self._current_row = {
+                                "experiment_name": None,
+                                "trial_name": None,
+                                "subject_id": None,
+                                "experimenter_name": None,
+                                "timestamp_unix": None, 
+                                "timestamp": None, "force": 
+                                None, "RR": None, 
+                                "event_marker": self._event_marker, 
+                                "condition": self._condition
+                            }
+        
         self._device_started = False
         self._event_loop = None
         self._crashed = False
@@ -159,7 +49,7 @@ class VernierManager:
         self._godirect = None
         self._dataset = None
         self._file_opened = False
-
+    
     @property
     def device_started(self):
         return self._device_started
@@ -192,14 +82,23 @@ class VernierManager:
     def condition(self, value):
         self._condition = value
 
-    @property
-    def experimenter_name(self):
-        return self._experimenter_name
-    
-    @experimenter_name.setter
-    def experimenter_name(self, value):
-        self._experimenter_name = value
-
+    def set_metadata(self, experiment_name: str, trial_name: str, 
+                 subject_id: str, experimenter_name: str = 'Unknown'):
+        """
+        Set all metadata at once - ensures atomic, consistent state.
+        Must be called before set_filenames().
+        """
+        # Validation
+        if not all([experiment_name, trial_name, subject_id]):
+            raise ValueError("experiment_name, trial_name, and subject_id are required")
+        
+        self._experiment_name = experiment_name
+        self._trial_name = trial_name
+        self._subject_id = subject_id
+        self._experimenter_name = experimenter_name
+        
+        print(f"Metadata set: {experiment_name}/{trial_name}/{subject_id}")
+        
     def set_data_folder(self, subject_folder):
         self.data_folder = os.path.join(subject_folder, "respiratory_data")
         if not os.path.exists(self.data_folder):
@@ -207,15 +106,18 @@ class VernierManager:
 
         print(f"Vernier data folder set to: {self.data_folder}")
 
-    def set_filenames(self, subject_id):
+    def set_filenames(self):
         if not self.data_folder:
             print("Data folder not set. Please set the data folder before setting filenames.")
             return
+
+        if not self._subject_id:
+            print("Subject ID not set. Please set metadata before setting filenames.")
+            return
         
-        self._subject_id = subject_id
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        self.hdf5_filename = os.path.join(self.data_folder, f"{current_date}_{subject_id}_respiratory_data_{self._num_crashes}.h5")
-        self.csv_filename = os.path.join(self.data_folder, f"{current_date}_{subject_id}_respiratory_data_{self._num_crashes}.csv")
+        self.hdf5_filename = os.path.join(self.data_folder, f"{current_date}_{self._subject_id}_respiratory_data_{self._num_crashes}.h5")
+        self.csv_filename = os.path.join(self.data_folder, f"{current_date}_{self._subject_id}_respiratory_data_{self._num_crashes}.csv")
 
     def initialize_hdf5_file(self):
         # current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -238,13 +140,16 @@ class VernierManager:
 
             if 'data' not in self.hdf5_file:  
                 dtype = np.dtype([
+                    ('experiment_name', h5py.string_dtype(encoding='utf-8')),
+                    ('trial_name', h5py.string_dtype(encoding='utf-8')),
+                    ('subject_id', h5py.string_dtype(encoding='utf-8')),
+                    ('experimenter_name', h5py.string_dtype(encoding='utf-8')),
                     ('timestamp_unix', 'f8'),
                     ('timestamp', h5py.string_dtype(encoding='utf-8')),
                     ('force', 'f4'),
                     ('RR', 'f4'),
                     ('event_marker', h5py.string_dtype(encoding='utf-8')),
                     ('condition', h5py.string_dtype(encoding='utf-8')),
-                    ('experimenter_name', h5py.string_dtype(encoding='utf-8'))
                 ])
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
@@ -253,7 +158,7 @@ class VernierManager:
                 self._dataset = self.hdf5_file['data']  
 
             self._file_opened = True
-            print("HDF5 file created for emotibit data: ", self.hdf5_filename)
+            print("HDF5 file created for Vernier data: ", self.hdf5_filename)
 
         except Exception as e:
             print(f"Error initializing HDF5 file: {e}")
@@ -297,7 +202,16 @@ class VernierManager:
         self._dataset = None
         self._sensors = None
         self._godirect = None
-        self._current_row = {"timestamp_unix": None, "timestamp": None, "force": None, "RR": None, "event_marker": self._event_marker, "condition": self._condition, "experimenter_name": self._experimenter_name}
+        self._current_row = {
+                                "experiment_name": None,
+                                "trial_name": None,
+                                "subject_id": None,
+                                "experimenter_name": None,
+                                "timestamp_unix": None, 
+                                "timestamp": None, "force": None, 
+                                "RR": None, "event_marker": self._event_marker, 
+                                "condition": self._condition, 
+                             }
         self._streaming = False
         self.running = False
         self.hdf5_file = None
@@ -356,13 +270,15 @@ class VernierManager:
                 if self._device.read():
                     tsu = tm.get_timestamp("unix")
                     ts = datetime.fromtimestamp(tsu).isoformat()
-                    
+                    self._current_row["experiment_name"] = self._experiment_name
+                    self._current_row["trial_name"] = self._trial_name
+                    self._current_row["subject_id"] = self._subject_id
+                    self._current_row["experimenter_name"] = self._experimenter_name
                     self._current_row["timestamp_unix"] = tsu
                     self._current_row["timestamp"] = ts
                     self._current_row["event_marker"] = self.event_marker
                     self._current_row["condition"] = self.condition
-                    self._current_row["experimenter_name"] = self.experimenter_name
-
+                    
                     for sensor in self._sensors:
                         if sensor.sensor_description == "Force":
                             force_value = sensor.values[0] if sensor.values else None
@@ -453,8 +369,6 @@ class VernierManager:
                 if self._file_opened:
                     print("Stop is closing HDF5 file...")
                     self.close_h5_file()
-                    print("Stop is converting HDF5 to CSV...")
-                    self.hdf5_to_csv()
                 
                 self._device_started = False
                 print("Vernier manager stopped.")
@@ -485,13 +399,16 @@ class VernierManager:
                 return
 
             new_data = np.zeros(1, dtype=self._dataset.dtype)  
+            new_data[0]['experiment_name'] = row.get('experiment_name', '')
+            new_data[0]['trial_name'] = row.get('trial_name', '')
+            new_data[0]['subject_id'] = row.get('subject_id', '')
+            new_data[0]['experimenter_name'] = row.get('experimenter_name', '')
             new_data[0]['timestamp_unix'] = row.get('timestamp_unix', np.nan)
             new_data[0]['timestamp'] = row.get('timestamp', '')  
             new_data[0]['force'] = row.get('force', np.nan)
             new_data[0]['RR'] = row.get('RR', np.nan)
             new_data[0]['event_marker'] = row.get('event_marker', '')
             new_data[0]['condition'] = row.get('condition', '')
-            new_data[0]['experimenter_name'] = row.get('experimenter_name', '')
             
             new_size = self._dataset.shape[0] + 1
             self._resize_dataset(new_size)  
@@ -556,6 +473,3 @@ class VernierManager:
         except Exception as e:
             print(f"Error converting HDF5 to CSV: {e}")
             return 
-        
-
-        
