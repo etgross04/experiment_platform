@@ -10,108 +10,16 @@ import pandas as pd
 from datetime import datetime, timezone
 
 class EventManager:
-    """
-    EventManager: Thread-safe event marker streaming and recording system.
-    
-    CONTRACT SPECIFICATION
-    ======================
-    
-    Purpose:
-    --------
-    Stream and record experimental event markers with timestamps to HDF5 format,
-    with automatic CSV conversion on shutdown.
-    
-    Lifecycle:
-    ----------
-    1. Initialize: EventManager()
-    2. Configure: set_data_folder() -> set_filenames() -> initialize_hdf5_file()
-    3. Stream: start() -> (set event_marker/condition as needed) -> stop()
-    
-    Required Call Sequence:
-    -----------------------
-    manager = EventManager()
-    manager.set_data_folder(path)      # MUST be called before set_filenames()
-    manager.set_filenames(subject_id)  # MUST be called before initialize_hdf5_file()
-    manager.initialize_hdf5_file()     # MUST be called before start()
-    manager.start()                    # Begins streaming
-    # ... set event_marker and condition as needed during experiment ...
-    manager.stop()                     # Stops streaming, closes files, converts to CSV
-    
-    State Machine:
-    --------------
-    INITIALIZED -> CONFIGURED (after set_data_folder/set_filenames/initialize_hdf5_file)
-    CONFIGURED -> STREAMING (after start())
-    STREAMING -> STOPPED (after stop())
-    
-    Thread Safety Guarantees:
-    -------------------------
-    - event_marker and condition properties are thread-safe (lock-protected writes)
-    - HDF5 writes are serialized via lock
-    - Multiple concurrent reads of event_marker/condition are safe
-    - start() and stop() are idempotent
-    
-    Data Format Contract:
-    ---------------------
-    HDF5 Schema (dataset 'data'):
-        - timestamp_unix: utf-8 string (Unix epoch timestamp)
-        - timestamp_iso: utf-8 string (ISO 8601 format)
-        - event_marker: utf-8 string (current marker value)
-        - condition: utf-8 string (current condition value)
-    
-    CSV Schema (matches HDF5):
-        - Same field names and string types
-        - Header row included
-        - One event per row
-    
-    Preconditions:
-    --------------
-    - data_folder MUST exist and be writable
-    - subject_id MUST be provided before calling set_filenames()
-    - TimestampManager module must be available as 'tm'
-    - initialize_hdf5_file() MUST complete successfully before start()
-    
-    Postconditions:
-    ---------------
-    - After stop(): HDF5 file is closed and flushed
-    - After stop(): CSV file exists with all streamed data
-    - After stop(): streaming thread is terminated
-    - atexit handler ensures cleanup even on abnormal termination
-    
-    Error Handling Contract:
-    ------------------------
-    - ValueError: Raised if event_marker or condition set to non-string
-    - ValueError: Raised if set_data_folder() not called before set_filenames()
-    - Prints error messages but does not raise exceptions for:
-      * HDF5 initialization failures
-      * File write failures during streaming
-      * CSV conversion failures
-    
-    Performance Characteristics:
-    ----------------------------
-    - Sampling rate: 100 Hz (0.01s sleep between samples)
-    - HDF5 dataset grows dynamically (no preallocated size)
-    - CSV conversion uses chunked reading (1000 rows per chunk)
-    
-    Invariants:
-    -----------
-    - If is_streaming is True, thread is alive and HDF5 file is open
-    - event_marker and condition are always strings (enforced by setters)
-    - current_row always has keys: timestamp_unix, timestamp_iso, event_marker, condition
-    
-    Dependencies:
-    -------------
-    - h5py, numpy, pandas, threading, atexit, os, time, datetime
-    - TimestampManager module (imported as tm)
-    """
     def __init__(self):
         self.time_started_iso = None
         self.time_started_unix = None
         self.is_streaming = False
-        self.current_row = {key: None for key in ["unix_timestamp", "iso_timestamp", "event_marker", "condition", "experimenter_name"]}
         
         self._event_marker = 'startup'
         self._condition = 'None'
-        
+        self._experiment_name = None
+        self._trial_name = None
+        self._subject_id = None
         self._experimenter_name = 'unknown'
         self.thread = None
         self.shutdown_event = Event()
@@ -126,6 +34,17 @@ class EventManager:
         self._dataset = None
         self._time_started = None
 
+        self.current_row = {
+                                "experiment_name": None, 
+                                "trial_name": None,
+                                "subject_id": None,
+                                "experimenter_name": None,
+                                "timestamp_unix": None,
+                                "timestamp_iso": None,
+                                "event_marker": self._event_marker,
+                                "condition": self._condition,
+                            }
+        
         atexit.register(self.stop)
         print("Event Manager Initialized... ")
         print("Event Manager data folder, .hdf5 and .csv files will be set when experiment/trial and subject information is submitted.")
@@ -172,7 +91,7 @@ class EventManager:
             raise ValueError("Condition must be a string.")
         
     ##################################################################
-    # Methods ########################################################   
+    # Methods ########################################################  
     def start(self):
         if self.thread and self.thread.is_alive():
             print("Event Manager is already running.")
@@ -223,15 +142,24 @@ class EventManager:
         close_result = self.close_h5_file()
 
         print(close_result)
-        print("Converting Event Marker H5 to CSV...")
-
-        try:
-            self.hdf5_to_csv()
-            print("Event Marker H5 file converted to CSV successfully.")
-        except Exception as e:
-            print(f"Error converting H5 to CSV: {e}")
-        
         print("Event Manager stopped completely.")
+
+    def set_metadata(self, experiment_name: str, trial_name: str, 
+                 subject_id: str, experimenter_name: str = 'Unknown'):
+        """
+        Set all metadata at once - ensures atomic, consistent state.
+        Must be called before set_filenames().
+        """
+        # Validation
+        if not all([experiment_name, trial_name, subject_id]):
+            raise ValueError("experiment_name, trial_name, and subject_id are required")
+        
+        self._experiment_name = experiment_name
+        self._trial_name = trial_name
+        self._subject_id = subject_id
+        self._experimenter_name = experimenter_name
+        
+        print(f"Metadata set: {experiment_name}/{trial_name}/{subject_id}")
 
     def set_data_folder(self, subject_folder):
         self.data_folder = subject_folder
@@ -241,15 +169,15 @@ class EventManager:
 
         print(f"Event marker data folder set to: {self.data_folder}")
 
-    def set_filenames(self, subject_id):
+    def set_filenames(self):
         if self._data_folder is None:
             print("Data folder must be set before setting filenames.")
             return
         
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        self.hdf5_filename = os.path.join(self._data_folder, f"{current_date}_{subject_id}_event_markers.h5")
+        self.hdf5_filename = os.path.join(self._data_folder, f"{current_date}_{self._subject_id}_event_markers.h5")
         print(f"HDF5 filename set to: {self.hdf5_filename}")
-        self.csv_filename = os.path.join(self._data_folder, f"{current_date}_{subject_id}_event_markers.csv")
+        self.csv_filename = os.path.join(self._data_folder, f"{current_date}_{self._subject_id}_event_markers.csv")
         print(f"CSV filename set to: {self.csv_filename}")
 
     def initialize_hdf5_file(self):
@@ -261,11 +189,14 @@ class EventManager:
             self.hdf5_file = h5py.File(self.hdf5_filename, 'a')  
             if 'data' not in self.hdf5_file:  
                 dtype = np.dtype([
-                    ('timestamp_unix', h5py.string_dtype(encoding='utf-8')),
+                    ('experiment_name', h5py.string_dtype(encoding='utf-8')),
+                    ('trial_name', h5py.string_dtype(encoding='utf-8')),
+                    ('subject_id', h5py.string_dtype(encoding='utf-8')),
+                    ('experimenter_name', h5py.string_dtype(encoding='utf-8')),
+                    ('timestamp_unix', 'f8'),
                     ('timestamp_iso', h5py.string_dtype(encoding='utf-8')),
                     ('event_marker', h5py.string_dtype(encoding='utf-8')),
-                    ('condition', h5py.string_dtype(encoding='utf-8')), 
-                    ('experimenter_name', h5py.string_dtype(encoding='utf-8'))
+                    ('condition', h5py.string_dtype(encoding='utf-8'))
                 ])
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
@@ -289,12 +220,14 @@ class EventManager:
         print("Event Manager streaming thread started...")
         while not self.shutdown_event.is_set():
             with self.lock:
-                self.current_row = {key: None for key in ["timestamp_unix", "timestamp_iso", "event_marker", "condition"]}
+                self.current_row["experiment_name"] = self._experiment_name
+                self.current_row["trial_name"] = self._trial_name
+                self.current_row["subject_id"] = self._subject_id
+                self.current_row["experimenter_name"] = self.experimenter_name
                 self.current_row["timestamp_unix"] = tm.get_timestamp("unix")
                 self.current_row["timestamp_iso"] = tm.get_timestamp("iso")
                 self.current_row["event_marker"] = self._event_marker
                 self.current_row["condition"] = self._condition
-                self.current_row["experimenter_name"] = self.experimenter_name
                 
                 self.write_to_hdf5(self.current_row)
 
@@ -308,7 +241,16 @@ class EventManager:
         # with self.lock:
         # Append the new row to the dataset
         self._dataset.resize(self._dataset.shape[0] + 1, axis=0)
-        self._dataset[-1] = (row['timestamp_unix'], row['timestamp_iso'], row['event_marker'], row['condition'], row['experimenter_name'])
+        self._dataset[-1] = (
+                                row['experiment_name'], 
+                                row['trial_name'], 
+                                row['subject_id'], 
+                                row['experimenter_name'],
+                                row['timestamp_unix'], 
+                                row['timestamp_iso'], 
+                                row['event_marker'], 
+                                row['condition'], 
+                            )
 
     def hdf5_to_csv(self):
         """
