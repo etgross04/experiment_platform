@@ -255,6 +255,7 @@ function AddProcedureForm({ onClose, onProcedureAdded, config }) {
     name: '',
     duration: 15,
     category: '',
+    platform: 'PsychoPy', 
     color: '#8B5CF6',
     required: false,
     instructionSteps: [''] // Start with one empty instruction step
@@ -380,13 +381,12 @@ function AddProcedureForm({ onClose, onProcedureAdded, config }) {
     <div className="wizard-overlay">
       <div className="wizard-modal">
         <div className="wizard-header">
-          <h2>Add PsychoPy Procedure</h2>
+          <h2>Add External Procedure</h2>
           <button onClick={onClose} className="close-btn">✕</button>
         </div>
 
         <div className="wizard-content">
-          <h3>Create Custom PsychoPy Procedure</h3>
-          <p>Add a new PsychoPy procedure to your library</p>
+          <h3>Add an external procedure to your library (e.g. PsychoPy)</h3>
           
           <form onSubmit={handleSubmit} className="add-procedure-form">
             <div className="form-group">
@@ -402,7 +402,29 @@ function AddProcedureForm({ onClose, onProcedureAdded, config }) {
               />
               {errors.name && <span className="error-text">{errors.name}</span>}
             </div>
-
+            <div className="form-group">
+              <label htmlFor="platform">Experiment Platform *</label>
+              <select
+                id="platform"
+                name="platform"
+                value={formData.platform}
+                onChange={handleInputChange}
+                style={{ width: '100%' }}
+              >
+                <option value="PsychoPy">PsychoPy</option>
+                <option value="OpenSesame">OpenSesame</option>
+                <option value="jsPsych">jsPsych</option>
+                <option value="E-Prime">E-Prime</option>
+                <option value="Inquisit">Inquisit</option>
+                <option value="Gorilla">Gorilla</option>
+                <option value="lab.js">lab.js</option>
+                <option value="PsyToolkit">PsyToolkit</option>
+                <option value="Other">Other</option>
+              </select>
+              <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
+                Select the platform where this procedure will be executed
+              </small>
+            </div>
             <div className="form-group">
               <label htmlFor="duration">Expected Duration (minutes) *</label>
               <input
@@ -680,6 +702,19 @@ function ExampleExperimentView({ onDragStart, onParadigmDragStart, config, onPro
                                 <div className="procedure-name">
                                   {procedure.name}
                                   {procedure.id === 'consent' && <span className="sticky-indicator"> (Always first)</span>}
+                                  {procedure.platform && (
+                                    <span style={{
+                                      marginLeft: '0.5rem',
+                                      fontSize: '0.7rem',
+                                      color: '#7c3aed',
+                                      background: '#ede9fe',
+                                      padding: '0.125rem 0.375rem',
+                                      borderRadius: '0.25rem',
+                                      fontWeight: '500'
+                                    }}>
+                                      {procedure.platform}
+                                    </span>
+                                  )}
                                 </div>
                                 {procedure.id !== 'consent' && (
                                   <span className="drag-handle">⠿</span>
@@ -870,6 +905,7 @@ function ExperimentCanvas({
       customDuration: overrides.customDuration || baseProcedure.duration,
       color: baseProcedure.color,
       required: baseProcedure.required,
+      platform: baseProcedure.platform,
       position: overrides.position || 0,
       instanceId: `${baseProcedure.id}_${Date.now()}${overrides.suffix || ''}`,
       configuration: overrides.preConfigured || {},
@@ -1142,9 +1178,22 @@ function ExperimentCanvas({
                 <div className="procedure-content">
                   <div className="procedure-title-row">
                     <div className="procedure-title">
-                      {procedure.name}
-                      {procedure.id === 'data-collection' && 
-                       procedure.configuration?.['collection-methods']?.audio_ser && (
+                    {procedure.name}
+                    {procedure.platform && (
+                      <span style={{
+                        marginLeft: '0.5rem',
+                        fontSize: '0.7rem',
+                        color: '#7c3aed',
+                        background: '#ede9fe',
+                        padding: '0.125rem 0.375rem',
+                        borderRadius: '0.25rem',
+                        fontWeight: '500'
+                      }}>
+                        ({procedure.platform})
+                      </span>
+                    )}
+                    {procedure.id === 'data-collection' && 
+                    procedure.configuration?.['collection-methods']?.audio_ser && (
                         <span style={{
                           marginLeft: '0.5rem',
                           fontSize: '0.7rem',
@@ -1154,6 +1203,19 @@ function ExperimentCanvas({
                           borderRadius: '0.25rem'
                         }}>
                           Audio Enabled
+                        </span>
+                      )}
+                      {procedure.platform && (
+                        <span style={{
+                          marginLeft: '0.5rem',
+                          fontSize: '0.7rem',
+                          color: '#7c3aed',
+                          background: '#ede9fe',
+                          padding: '0.125rem 0.375rem',
+                          borderRadius: '0.25rem',
+                          fontWeight: '500'
+                        }}>
+                          {procedure.platform}
                         </span>
                       )}
                     </div>
@@ -2018,7 +2080,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
             When checked, participants will be directed to switch to different software to complete this task.
           </small>
           
-          {formData.usePsychoPy && (
+          {/* {formData.usePsychoPy && (
             <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8fafc', borderRadius: '0.5rem' }}>
               <label>Task Instructions for Participants</label>
               <textarea 
@@ -2029,7 +2091,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                 style={{ width: '100%', marginTop: '0.5rem' }}
               />
             </div>
-          )}
+          )} */}
         </div>
       );
 
@@ -2311,7 +2373,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
             </ul>
           </div>
 
-          <label className="checkbox-label wizard-mt">
+          {/* <label className="checkbox-label wizard-mt">
             <input 
               type="checkbox" 
               checked={formData.allowConditionOverride || false}
@@ -2321,7 +2383,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
           </label>
           <small className="wizard-help-text-mt">
             When checked, experimenters can manually change the condition marker before starting this task.
-          </small>
+          </small> */}
         </div>
       );
 

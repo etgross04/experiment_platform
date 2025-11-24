@@ -33,15 +33,18 @@ function PsychoPyTransitionComponent({ procedure, sessionId }) {
     return procedure.name || 'Cognitive Task';
   };
 
+  const getPlatformName = () => {
+    return procedure.platform || 'PsychoPy';
+  };
+
   if (taskState === 'instructions') {
     const customInstructions = getCustomInstructions();
     
     return (
       <div className="procedure-instructions">
-        <h4>Switch to PsychoPy</h4>
+        <h4>Switch to {getPlatformName()}</h4>
         <div className="instruction-content">
-          <p><strong>You will now perform the {getTaskName()} in PsychoPy.</strong></p>
-          
+          <p><strong>You will now perform the {getTaskName()} in {getPlatformName()}.</strong></p>
           {customInstructions ? (
             <div className="custom-instructions">
               <h5>Task-Specific Instructions:</h5>
@@ -50,8 +53,8 @@ function PsychoPyTransitionComponent({ procedure, sessionId }) {
           ) : (
             <div className="default-instructions">
               <ul>
-                <li>Please wait for the experimenter to launch PsychoPy</li>
-                <li>Follow the instructions displayed in the PsychoPy window</li>
+                <li>Please wait for the experimenter to launch {getPlatformName()}</li>
+                <li>Follow the instructions displayed in the {getPlatformName()} window</li>
                 <li>Complete the task as directed</li>
                 <li>Return to this window when the task is finished</li>
               </ul>
@@ -59,7 +62,7 @@ function PsychoPyTransitionComponent({ procedure, sessionId }) {
           )}
           
           <div className="psychopy-notice">
-            <p><strong>Important:</strong> Do not close this browser window. You will return here after completing the PsychoPy task.</p>
+            <p><strong>Important:</strong> Do not close this browser window. You will return here after completing the {getPlatformName()} task.</p>
           </div>
         </div>
         
@@ -74,9 +77,9 @@ function PsychoPyTransitionComponent({ procedure, sessionId }) {
     return (
       <div className="psychopy-waiting-container">
         <div className="psychopy-waiting-content">
-          <h3>Performing {getTaskName()} in PsychoPy</h3>
-          <p>Please focus on the PsychoPy window to complete your task.</p>
-          <p>Follow the instructions displayed in PsychoPy.</p>
+          <h3>Performing {getTaskName()} in {getPlatformName()}</h3>
+          <p>Please focus on the {getPlatformName()} window to complete your task.</p>
+          <p>Follow the instructions displayed in {getPlatformName()}.</p>
         </div>
       </div>
     );

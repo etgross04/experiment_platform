@@ -76,6 +76,14 @@
       "duration": 5,
       "required": false,
       "category": "baseline-collection"
+    },
+    "teststroop": {
+      "id": "teststroop",
+      "name": "test_stroop",
+      "duration": 15,
+      "required": false,
+      "category": "main-tasks",
+      "platform": "opensesame"
     }
   },
   "categories": {
@@ -111,7 +119,7 @@
   "paradigms": {
     "procedural-memory": {
       "name": "Procedural Memory",
-      "description": "Experimental designs that use priming to influence cognitive processing",
+      "description": "Studies motor and cognitive skill learning through implicit sequence learning tasks. Assesses the acquisition of habits and automaticity through repeated practice without conscious awareness.",
       "procedures": [
         {
           "id": "consent",
@@ -131,7 +139,7 @@
     },
     "cognitive-load": {
       "name": "Cognitive Load",
-      "description": "Experimental designs requiring participants to perform two tasks simultaneously",
+      "description": "Examines working memory capacity using dual-task paradigms where participants perform concurrent tasks. Measures interference effects to assess cognitive resource allocation and mental workload.",
       "procedures": [
         {
           "id": "consent",
@@ -159,7 +167,7 @@
     },
     "distractibility": {
       "name": "Distractibility",
-      "description": "Experimental designs studying cognitive interference effects",
+      "description": "Investigates working memory interference from external distractions and interruptions. Tests participants' ability to maintain focus while ignoring or managing irrelevant stimuli.",
       "procedures": [
         {
           "id": "consent",
@@ -187,7 +195,7 @@
     },
     "working-memory": {
       "name": "Working Memory",
-      "description": "Experimental designs focusing on memory processes and performance",
+      "description": "Assesses temporary storage and manipulation of information needed for complex cognitive tasks. Measures capacity limits and retention using span tasks and change detection paradigms.",
       "procedures": [
         {
           "id": "consent",
@@ -214,7 +222,7 @@
     },
     "focus-sustained-attention": {
       "name": "Focus / Sustained Attention",
-      "description": "Experimental designs focusing on attention and vigilance",
+      "description": "Measures the ability to maintain vigilant attention over prolonged periods using continuous performance tests. Assesses detection of infrequent targets and vigilance decrements over time.",
       "procedures": [
         {
           "id": "consent",
@@ -250,7 +258,7 @@
     },
     "concentration": {
       "name": "Concentration",
-      "description": "Experimental designs involving multiple sensory modalities",
+      "description": "Studies integration of information across multiple sensory modalities. Examines how visual, auditory, and tactile inputs are combined to form coherent perceptions.",
       "procedures": [
         {
           "id": "consent",
@@ -274,7 +282,7 @@
     },
     "prospective-memory": {
       "name": "Prospective Memory",
-      "description": "Experimental designs testing the ability to remember to execute intended actions in the future",
+      "description": "Evaluates the ability to remember and execute future intentions without external prompts. Tests time-based and event-based remembering during ongoing activities.",
       "procedures": [
         {
           "id": "consent",
@@ -487,6 +495,18 @@
         "id": "psychopy-setup",
         "title": "External Procedure Setup",
         "description": "Specify task as external to the experiment platform"
+      },
+      {
+        "id": "task-description",
+        "title": "Task Configuration",
+        "description": "Define task parameters and settings"
+      }
+    ],
+    "teststroop": [
+      {
+        "id": "psychopy-setup",
+        "title": "PsychoPy Setup",
+        "description": "Configure PsychoPy integration options"
       },
       {
         "id": "task-description",

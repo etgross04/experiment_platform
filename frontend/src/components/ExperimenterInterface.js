@@ -848,16 +848,14 @@ function SettingsPanel({
               
               <button
                 onClick={convertDataToCsv}
-                className="process-audio-btn"
-                style={{ backgroundColor: '#007bff', marginBottom: '8px' }}
+                className="complete-experiment-btn"
               >
                 Convert Data to CSV
               </button>
               
               <button
                 onClick={pushDataToDatabase}
-                className="process-audio-btn"
-                style={{ backgroundColor: '#007bff' }}
+                className="complete-experiment-btn"
               >
               Push Data to Database
               </button>
@@ -1816,6 +1814,18 @@ useEffect(() => {
 
   const handlePreTestInstructionsComplete = () => {
     setPreTestCompleted(true);
+    
+    // Advance currentProcedure to first real procedure (skip consent and data-collection)
+    if (experimentData && experimentData.procedures) {
+      const firstRealProcedureIndex = experimentData.procedures.findIndex(
+        proc => proc.id !== 'consent' && 
+                proc.id !== 'data-collection' && 
+                !proc.name?.toLowerCase().includes('consent')
+      );
+      if (firstRealProcedureIndex !== -1) {
+        setCurrentProcedure(firstRealProcedureIndex);
+      }
+    }
   };
 
   const renderSetupForm = () => {
@@ -2025,12 +2035,15 @@ useEffect(() => {
                       actualIndex === currentProcedure ? 'current' : 
                       completedProcedures.includes(actualIndex) ? 'completed' : 'future'
                     } ${isDisabled ? 'disabled' : ''}`}
-                    onClick={() => actualIndex !== currentProcedure ? jumpToProcedure(index) : null}
+                    onClick={() => !isDisabled ? jumpToProcedure(index) : null}
                   >
                     <div className="procedure-number">{index + 1}</div>
                     <div className="procedure-details">
-                      <strong>{procedure.name}</strong>
-                      <div className="procedure-meta">
+                    <strong>
+                      {procedure.name}
+                      {procedure.platform && ` (${procedure.platform})`}
+                    </strong>
+                    <div className="procedure-meta">
                         {procedure.estimatedDuration || procedure.customDuration} min
                         {procedure.selectedMetrics && procedure.selectedMetrics.length > 0 && (
                           <span> • {procedure.selectedMetrics.join(', ')}</span>
@@ -2089,7 +2102,7 @@ useEffect(() => {
               <button 
                 onClick={convertDataToCsv}
                 className="complete-experiment-btn"
-                style={{ backgroundColor: '#007bff' }}
+                style={{ backgroundColor: '#6f42c1' }}
               >
                 Convert Data to CSV
               </button>

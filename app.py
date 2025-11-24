@@ -885,7 +885,7 @@ def add_psychopy_procedure():
         if not data:
             return jsonify({'success': False, 'error': 'No data provided'}), 400
         
-        required_fields = ['name', 'duration', 'category']
+        required_fields = ['name', 'duration', 'category', 'platform']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'success': False, 'error': f'{field} is required'}), 400
@@ -906,6 +906,7 @@ def add_psychopy_procedure():
             return jsonify({'success': False, 'error': 'Duration must be a valid number'}), 400
         
         procedure_name = data['name'].strip()
+        platform = data['platform'].strip().lower()
         procedure_id = re.sub(r'[^a-zA-Z0-9\s-]', '', procedure_name.lower())
         procedure_id = re.sub(r'\s+', '-', procedure_id)
         procedure_id = procedure_id.strip('-')
@@ -932,7 +933,8 @@ def add_psychopy_procedure():
             'name': procedure_name,
             'duration': duration,
             'required': data.get('required', False),
-            'category': data['category'].strip()
+            'category': data['category'].strip(),
+            'platform': platform 
         }
         
         if 'procedures' not in config:
@@ -1009,6 +1011,7 @@ def process_procedure_for_psychopy(proc_data):
         'customDuration': proc_data.get('customDuration'),
         'color': proc_data.get('color'),
         'required': proc_data.get('required'),
+        'platform': proc_data.get('platform'),
         'position': proc_data.get('position'),
         
         'configuration': proc_data.get('configuration', {}),
@@ -1047,7 +1050,8 @@ def process_procedure_for_psychopy(proc_data):
 
             'breakDuration': proc_data.get('configuration', {}).get('duration', {}).get('duration'),
             'selectedVideo': proc_data.get('configuration', {}).get('media-selection', {}).get('selectedVideo'),
-            'rawConfiguration': proc_data.get('configuration', {})
+            'rawConfiguration': proc_data.get('configuration', {}),
+            'platform': proc_data.get('platform') 
         }
     }
     

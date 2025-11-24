@@ -1529,7 +1529,7 @@
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
-  background-color: #007bff;
+  background-color: #6f42c1;
   color: white;
   cursor: pointer;
   font-size: 0.85em;
@@ -1538,7 +1538,7 @@
 }
 
 .process-audio-btn:hover {
-  background-color: #0056b3;
+  background-color: #6f42c1;
 }
 
 .process-audio-btn:disabled {
@@ -1579,7 +1579,7 @@
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
-  background-color: #007bff;
+  background-color: #6f42c1;
   color: white;
   cursor: pointer;
   font-size: 0.85em;
@@ -1588,7 +1588,7 @@
 }
 
 .import-emotibit-btn:hover {
-  background-color: #0056b3;
+  background-color: #6f42c1;
 }
 
 .import-emotibit-btn:disabled {
@@ -1675,7 +1675,7 @@
 }
 
 .complete-experiment-btn {
-  background: #28a745;
+  background: #6f42c1;
   color: white;
   border: none;
   padding: .85rem 1rem;
