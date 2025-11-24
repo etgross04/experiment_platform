@@ -70,20 +70,6 @@
       "required": true,
       "category": "main-tasks"
     },
-    "post-manipulation": {
-      "id": "post-manipulation",
-      "name": "Post-test Assessment",
-      "duration": 10,
-      "required": false,
-      "category": "post-task"
-    },
-    "post-task-survey": {
-      "id": "post-task-survey",
-      "name": "Exit Survey",
-      "duration": 10,
-      "required": false,
-      "category": "post-task"
-    },
     "ser-baseline": {
       "id": "ser-baseline",
       "name": "SER Baseline Recording",
@@ -123,8 +109,8 @@
     }
   },
   "paradigms": {
-    "priming": {
-      "name": "Priming",
+    "procedural-memory": {
+      "name": "Procedural Memory",
       "description": "Experimental designs that use priming to influence cognitive processing",
       "procedures": [
         {
@@ -140,15 +126,11 @@
           "position": 3,
           "customName": "Priming Task",
           "customDuration": 25
-        },
-        {
-          "id": "post-task-survey",
-          "position": 4
         }
       ]
     },
-    "dual-task": {
-      "name": "Dual-task",
+    "cognitive-load": {
+      "name": "Cognitive Load",
       "description": "Experimental designs requiring participants to perform two tasks simultaneously",
       "procedures": [
         {
@@ -175,8 +157,8 @@
         }
       ]
     },
-    "interference": {
-      "name": "Interference",
+    "distractibility": {
+      "name": "Distractibility",
       "description": "Experimental designs studying cognitive interference effects",
       "procedures": [
         {
@@ -200,15 +182,11 @@
           "id": "main-task",
           "position": 5,
           "customName": "Interference Task"
-        },
-        {
-          "id": "post-manipulation",
-          "position": 6
         }
       ]
     },
-    "memory": {
-      "name": "Memory",
+    "working-memory": {
+      "name": "Working Memory",
       "description": "Experimental designs focusing on memory processes and performance",
       "procedures": [
         {
@@ -229,19 +207,13 @@
           "customName": "Memory Task"
         },
         {
-          "id": "post-manipulation",
-          "position": 6,
-          "customName": "Memory Assessment",
-          "customDuration": 15
-        },
-        {
           "id": "break",
           "position": 7
         }
       ]
     },
-    "attention": {
-      "name": "Attention",
+    "focus-sustained-attention": {
+      "name": "Focus / Sustained Attention",
       "description": "Experimental designs focusing on attention and vigilance",
       "procedures": [
         {
@@ -266,22 +238,18 @@
           "preConfigured": {
             "question-set": {
               "questionSet": "prs_1"
-            },
-            "instructions": {
-              "enableDetailedInstructions": true,
-              "additionalInstructions": "Please rate each statement based on your experience in this environment."
             }
           }
         },
         {
           "id": "main-task",
           "position": 7,
-          "customName": "Attention Task"
+          "customName": "Main Task"
         }
       ]
     },
-    "cross-modal": {
-      "name": "Cross-modal",
+    "concentration": {
+      "name": "Concentration",
       "description": "Experimental designs involving multiple sensory modalities",
       "procedures": [
         {
@@ -301,11 +269,43 @@
           "position": 6,
           "customName": "Cross-modal Task",
           "customDuration": 35
+        }
+      ]
+    },
+    "prospective-memory": {
+      "name": "Prospective Memory",
+      "description": "Experimental designs testing the ability to remember to execute intended actions in the future",
+      "procedures": [
+        {
+          "id": "consent",
+          "position": 0
         },
         {
-          "id": "post-task-survey",
-          "position": 7,
-          "customName": "Cross-modal Assessment"
+          "id": "demographics",
+          "position": 1
+        },
+        {
+          "id": "bio-baseline-recording",
+          "position": 2
+        },
+        {
+          "id": "main-task",
+          "position": 3,
+          "customName": "Prospective Memory Task",
+          "customDuration": 25
+        },
+        {
+          "id": "prs",
+          "position": 4,
+          "preConfigured": {
+            "question-set": {
+              "questionSet": "prs_1"
+            }
+          }
+        },
+        {
+          "id": "break",
+          "position": 5
         }
       ]
     }
@@ -340,11 +340,6 @@
         "id": "signature",
         "title": "Signature Method",
         "description": "Digital signature or checkbox acknowledgment"
-      },
-      {
-        "id": "customization",
-        "title": "Custom Text",
-        "description": "Add experiment-specific information"
       }
     ],
     "demographics": [
@@ -391,11 +386,6 @@
         "id": "duration",
         "title": "Recording Time",
         "description": "Set baseline recording duration"
-      },
-      {
-        "id": "task",
-        "title": "Baseline Activity",
-        "description": "Resting state, breathing, or other baseline task"
       }
     ],
     "psych-pretest": [
@@ -411,8 +401,8 @@
       },
       {
         "id": "psychopy-setup",
-        "title": "PsychoPy Setup",
-        "description": "Configure PsychoPy integration options"
+        "title": "External Procedure Setup",
+        "description": "Specify task as external to the experiment platform"
       }
     ],
     "sart-task": [
@@ -428,8 +418,8 @@
       },
       {
         "id": "psychopy-setup",
-        "title": "PsychoPy Setup",
-        "description": "Configure PsychoPy integration options"
+        "title": "External Procedure Setup",
+        "description": "Specify task as external to the experiment platform"
       }
     ],
     "prs": [
@@ -437,11 +427,6 @@
         "id": "question-set",
         "title": "Question Set Selection",
         "description": "Choose which PRS question set to use"
-      },
-      {
-        "id": "instructions",
-        "title": "Task Instructions",
-        "description": "Configure any additional instructions for participants"
       }
     ],
     "stressor": [
@@ -471,23 +456,6 @@
         "id": "environment",
         "title": "Task Environment",
         "description": "VR, computer, or physical environment setup"
-      },
-      {
-        "id": "measurements",
-        "title": "Data Collection",
-        "description": "Configure sensor recording and embedded measures"
-      }
-    ],
-    "post-manipulation": [
-      {
-        "id": "measures",
-        "title": "Assessment Type",
-        "description": "Choose post-manipulation measures"
-      },
-      {
-        "id": "comparison",
-        "title": "Comparison Setup",
-        "description": "Enable pre/post comparisons"
       }
     ],
     "post-task-survey": [
@@ -512,18 +480,13 @@
         "id": "duration",
         "title": "Recording Time",
         "description": "Set baseline recording duration"
-      },
-      {
-        "id": "task",
-        "title": "Baseline Activity",
-        "description": "Questionnaire recordings for establishing SER baseline"
       }
     ],
     "instructiontest": [
       {
         "id": "psychopy-setup",
-        "title": "PsychoPy Setup",
-        "description": "Configure PsychoPy integration options"
+        "title": "External Procedure Setup",
+        "description": "Specify task as external to the experiment platform"
       },
       {
         "id": "task-description",

@@ -2002,23 +2002,6 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
           </div>
         );
       }
-    
-    case 'instructions':
-      return (
-        <div className="form-group">
-          <label>Additional Instructions</label>
-          <textarea 
-            value={formData.additionalInstructions || ''}
-            onChange={(e) => handleInputChange('additionalInstructions', e.target.value)}
-            placeholder="Enter any additional instructions for participants..."
-            rows={4}
-            style={{ width: '100%', marginTop: '0.5rem' }}
-          />
-          <small style={{ color: '#666', display: 'block', marginTop: '8px' }}>
-            These instructions will be shown before the PRS task begins.
-          </small>
-        </div>
-      );
 
     case 'psychopy-setup':
       return (
@@ -2029,10 +2012,10 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
               checked={formData.usePsychoPy || false}
               onChange={(e) => handleInputChange('usePsychoPy', e.target.checked)}
             />
-            Perform this task in PsychoPy
+            Perform this task in external software (e.g., PsychoPy)
           </label>
           <small style={{ color: '#666', display: 'block', marginTop: '8px' }}>
-            When checked, participants will be directed to switch to PsychoPy to complete this task.
+            When checked, participants will be directed to switch to different software to complete this task.
           </small>
           
           {formData.usePsychoPy && (
