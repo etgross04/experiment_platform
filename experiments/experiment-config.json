@@ -44,7 +44,7 @@
     },
     "psych-pretest": {
       "id": "psych-pretest",
-      "name": "Pre-test (Stroop Task)",
+      "name": "Stroop Task",
       "duration": 15,
       "required": false,
       "category": "pre-task-assessments"
@@ -76,14 +76,6 @@
       "duration": 5,
       "required": false,
       "category": "baseline-collection"
-    },
-    "teststroop": {
-      "id": "teststroop",
-      "name": "test_stroop",
-      "duration": 15,
-      "required": false,
-      "category": "main-tasks",
-      "platform": "opensesame"
     }
   },
   "categories": {
@@ -128,12 +120,6 @@
         {
           "id": "demographics",
           "position": 1
-        },
-        {
-          "id": "main-task",
-          "position": 3,
-          "customName": "Priming Task",
-          "customDuration": 25
         }
       ]
     },
@@ -151,17 +137,20 @@
         },
         {
           "id": "bio-baseline-recording",
+          "position": 2
+        },
+        {
+          "id": "ser-baseline",
           "position": 3
         },
         {
-          "id": "main-task",
-          "position": 5,
-          "customName": "Dual-task Paradigm",
-          "customDuration": 35
+          "id": "stressor",
+          "position": 4,
+          "customName": "Mental Arithmetic Task"
         },
         {
           "id": "break",
-          "position": 6
+          "position": 5
         }
       ]
     },
@@ -178,18 +167,21 @@
           "position": 1
         },
         {
+          "id": "bio-baseline-recording",
+          "position": 2
+        },
+        {
+          "id": "ser-baseline",
+          "position": 3
+        },
+        {
           "id": "psych-pretest",
           "position": 2
         },
         {
-          "id": "stressor",
-          "position": 4,
-          "customName": "Interference Manipulation"
-        },
-        {
           "id": "main-task",
           "position": 5,
-          "customName": "Interference Task"
+          "customName": "Main Task"
         }
       ]
     },
@@ -207,16 +199,16 @@
         },
         {
           "id": "bio-baseline-recording",
-          "position": 3
+          "position": 2
         },
         {
           "id": "main-task",
-          "position": 5,
-          "customName": "Memory Task"
+          "position": 3,
+          "customName": "Main Task"
         },
         {
           "id": "break",
-          "position": 7
+          "position": 4
         }
       ]
     },
@@ -242,7 +234,7 @@
         },
         {
           "id": "prs",
-          "position": 6,
+          "position": 5,
           "preConfigured": {
             "question-set": {
               "questionSet": "prs_1"
@@ -251,7 +243,7 @@
         },
         {
           "id": "main-task",
-          "position": 7,
+          "position": 6,
           "customName": "Main Task"
         }
       ]
@@ -270,12 +262,20 @@
         },
         {
           "id": "bio-baseline-recording",
+          "position": 2
+        },
+        {
+          "id": "ser-baseline",
+          "position": 3
+        },
+        {
+          "id": "psych-pretest",
           "position": 4
         },
         {
           "id": "main-task",
-          "position": 6,
-          "customName": "Cross-modal Task",
+          "position": 5,
+          "customName": "Main Task",
           "customDuration": 35
         }
       ]
@@ -398,16 +398,6 @@
     ],
     "psych-pretest": [
       {
-        "id": "test-selection",
-        "title": "Test Selection",
-        "description": "Choose psychological test (Stroop, N-back, etc.)"
-      },
-      {
-        "id": "parameters",
-        "title": "Test Parameters",
-        "description": "Set trial count, timing, difficulty"
-      },
-      {
         "id": "psychopy-setup",
         "title": "External Procedure Setup",
         "description": "Specify task as external to the experiment platform"
@@ -495,18 +485,6 @@
         "id": "psychopy-setup",
         "title": "External Procedure Setup",
         "description": "Specify task as external to the experiment platform"
-      },
-      {
-        "id": "task-description",
-        "title": "Task Configuration",
-        "description": "Define task parameters and settings"
-      }
-    ],
-    "teststroop": [
-      {
-        "id": "psychopy-setup",
-        "title": "PsychoPy Setup",
-        "description": "Configure PsychoPy integration options"
       },
       {
         "id": "task-description",
