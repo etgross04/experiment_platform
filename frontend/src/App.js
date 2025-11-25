@@ -50,14 +50,14 @@ function App() {
                 className="main-button builder-button"
                 onClick={() => setCurrentView('builder')}
               >
-                <h3>🔧 Build Experiment</h3>
+                <h3>Build Experiment</h3>
                 <p>Create and design new experiments</p>
               </button>
               <button 
                 className="main-button runner-button"
                 onClick={() => setCurrentView('runner')}
               >
-                <h3>▶️ Run Experiment</h3>
+                <h3>Run Experiment</h3>
                 <p>Load and execute saved experiments</p>
               </button>
             </div>
