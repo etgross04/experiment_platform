@@ -138,6 +138,8 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
   const [timeLeft, setTimeLeft] = useState(testConfig.initialTime);
   const [countdownTimeLeft, setCountdownTimeLeft] = useState(testConfig.countdownTime);
   const [timerEnded, setTimerEnded] = useState(false);
+  const [pendingTimerExpiration, setPendingTimerExpiration] = useState(false);
+  const abortControllerRef = useRef(null);
   
   // Audio State
   const [transcription, setTranscription] = useState('');
@@ -175,11 +177,15 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
   }, []);
 
   const confirmTranscription = useCallback(async (timeUpParam) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
     try {
       const response = await fetch('/confirm_transcription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ time_up: timeUpParam, test_status: testEnded })
+        body: JSON.stringify({ time_up: timeUpParam, test_status: testEnded }),
+        signal: controller.signal
       });
       
       const data = await response.json();
@@ -193,7 +199,15 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
         }
       }
     } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        console.log('Transcription confirmation timed out or aborted');
+        setTestStatus("Connection issue - please try again.");
+        return;
+      }
       console.error('Error:', error);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }, [testEnded]);
 
@@ -201,6 +215,7 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
     if (isProcessing) return;
     
     setIsProcessing(true);
+    abortControllerRef.current = new AbortController();
     
     if (!timeUp && !manualStop) {
       setTestStatus("Analyzing Answer...");
@@ -210,7 +225,8 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
       const response = await fetch('/process_answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test_status: testEnded || manualStop })
+        body: JSON.stringify({ test_status: testEnded || manualStop }),
+        signal: abortControllerRef.current.signal
       });
       
       if (!response.ok) {
@@ -270,6 +286,12 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
       setCurrentVolumeStage(0);
       
     } catch (error) {
+      // Don't show error if request was aborted due to timer expiration
+      if (error.name === 'AbortError') {
+        console.log('Request aborted due to timer expiration');
+        return;
+      }
+      
       console.error('Error:', error);
       setTestStatus("Something went wrong. Please repeat your answer.");
       setCountdownTimeLeft(testConfig.countdownTime);
@@ -277,8 +299,17 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
       isPausedRef.current = false; // Update ref
     } finally {
       setIsProcessing(false);
+      abortControllerRef.current = null;
+      
+      // Check if timer expired while we were processing
+      if (pendingTimerExpiration) {
+        console.log("Processing complete - handling pending timer expiration");
+        setPendingTimerExpiration(false);
+        confirmTranscription(true);
+        return; // Don't execute normal completion logic
+      }
     }
-  }, [isProcessing, timeUp, testEnded, manualStop, testConfig.restartNumber, testConfig.numToSubtract, testConfig.countdownTime, onTaskComplete]);
+  }, [isProcessing, timeUp, testEnded, manualStop, testConfig.restartNumber, testConfig.numToSubtract, testConfig.countdownTime, onTaskComplete, pendingTimerExpiration, confirmTranscription]);
 
   useEffect(() => {
     processAnswerRef.current = processAnswer;
@@ -410,7 +441,15 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
               setClockStatus("Time's up!");
               setResult(`Please start over at ${testConfig.restartNumber}.`);
               
-              if (!isProcessing) {
+              if (isProcessing) {
+                setPendingTimerExpiration(true);
+
+                console.log("Timer expired while processing - marking as pending");
+
+                if (abortControllerRef.current) {
+                  abortControllerRef.current.abort();
+                }
+              } else {
                 confirmTranscription(true);
               }
             }

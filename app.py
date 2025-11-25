@@ -34,13 +34,11 @@ update_event = threading.Event()
 update_message = None
 
 EXPERIMENT_TEMPLATES_DIR = "experiments/templates"
-# EXPERIMENT_TRIALS_DIR = "experiments/trials"
 EXPERIMENT_SUBJECT_DATA_DIR = "experiments/subject_data"
 TEST_FILES_DIR = "static/test_files"
 CONSENT_FORMS_DIR = "static/consent_forms"
 
 os.makedirs(EXPERIMENT_TEMPLATES_DIR, exist_ok=True)
-# os.makedirs(EXPERIMENT_TRIALS_DIR, exist_ok=True)
 os.makedirs(EXPERIMENT_SUBJECT_DATA_DIR, exist_ok=True)
 os.makedirs(TEST_FILES_DIR, exist_ok=True)
 os.makedirs(CONSENT_FORMS_DIR, exist_ok=True)
@@ -79,10 +77,8 @@ def serve_experiments(filename):
 @app.route('/api/launch-emotibit-osc', methods=['POST'])
 def launch_emotibit_osc():
     try:
-        # Path relative to Flask app root
         executable_path = os.path.join(os.getcwd(), 'executables', 'EmotiBitOscilloscope.app')
         
-        # On macOS, use 'open' command to launch .app bundles
         subprocess.Popen(['open', executable_path])
         
         return jsonify({
@@ -129,7 +125,6 @@ def convert_hdf5_to_csv():
         converted_files = []
         errors = []
         
-        # Convert EventManager HDF5 to CSV
         if event_manager and hasattr(event_manager, 'hdf5_to_csv'):
             try:
                 event_manager.hdf5_to_csv()
@@ -138,8 +133,7 @@ def convert_hdf5_to_csv():
             except Exception as e:
                 errors.append(f"EventManager conversion failed: {str(e)}")
                 print(f"✗ EventManager conversion error: {e}")
-        
-        # Convert VernierManager HDF5 to CSV
+    
         if vernier_manager and hasattr(vernier_manager, 'hdf5_to_csv'):
             try:
                 vernier_manager.hdf5_to_csv()
@@ -149,7 +143,6 @@ def convert_hdf5_to_csv():
                 errors.append(f"VernierManager conversion failed: {str(e)}")
                 print(f"✗ VernierManager conversion error: {e}")
         
-        # Convert PolarManager HDF5 to CSV
         if polar_manager and hasattr(polar_manager, 'hdf5_to_csv'):
             try:
                 polar_manager.hdf5_to_csv()
@@ -320,7 +313,6 @@ def record_task_audio():
 
             file_name = f"{id}_{ts}_{event_marker}.wav"
 
-            # Header structure: 'Timestamp', 'Event_Marker', 'Transcription', 'SER_Emotion', 'SER_Confidence'
             subject_manager.append_data({
                                             'unix_timestamp': uts,
                                             'timestamp': ts, 
@@ -419,7 +411,7 @@ def process_audio_files() -> Response:
                         timestamp_unix = dt.timestamp()
                     except Exception as parse_error:
                         print(f"Warning: Could not parse timestamp from {file}: {parse_error}")
-                        timestamp_unix = None  # Store None if parsing fails
+                        timestamp_unix = None 
 
                     emotion1, confidence1 = emo_list[0][0], emo_list[0][1]
                     emotion2, confidence2 = emo_list[1][0], emo_list[1][1]
@@ -531,8 +523,6 @@ def test_audio():
         return jsonify({'error': 'Transcription manager not initialized'}), 400
     
     try:
-        # endpoint_start = time.time()
-        
         recording_manager.stop_recording()
         original_file = recording_manager.recording_file
         
@@ -609,7 +599,6 @@ def broadcast_to_session(session_id, event_data):
 def trigger_audio_test(session_id):
     global update_message, update_event
     
-    # Use your existing SSE broadcaster
     update_message = {
         'event_type': 'audio_test_started',
         'session_id': session_id
@@ -827,7 +816,6 @@ def save_template():
         if not data.get('category'):
             return jsonify({'error': 'Category is required'}), 400
         
-        # Generate template ID
         template_name = data['name'].strip()
         template_id = re.sub(r'[^a-zA-Z0-9\s-]', '', template_name.lower())
         template_id = re.sub(r'\s+', '-', template_id)
@@ -1113,11 +1101,9 @@ def update_experiment(experiment_id):
         if not data.get('procedures') or len(data.get('procedures', [])) == 0:
             return jsonify({'error': 'At least one procedure is required'}), 400
         
-        # Load existing experiment to preserve creation date
         with open(filepath, 'r') as f:
             existing_experiment = json.load(f)
         
-        # Update experiment data
         experiment = {
             'id': experiment_id,
             'name': data['name'],
@@ -1135,7 +1121,6 @@ def update_experiment(experiment_id):
         
         experiment['procedures'].sort(key=lambda x: x.get('position', 0))
         
-        # Save updated experiment
         with open(filepath, 'w') as f:
             json.dump(experiment, f, indent=2)
         
@@ -1657,7 +1642,6 @@ def stop_polar_manager():
         if polar_manager is None:
             return jsonify({'error': 'Polar manager not initialized'}), 400
         
-        # Call the synchronous stop method (polar_manager needs to be updated to have sync stop)
         polar_manager.stop()
         return jsonify({'success': True, 'message': 'Polar manager stopped'})
     
@@ -1862,10 +1846,6 @@ def confirm_transcription():
             print("Recording stopped. Transcribing....")
             test_manager.current_answer = transcribe_audio(recording_manager.recording_file)
             print(f"Transcription result in test manager: {test_manager.current_answer}")
-            # if audio_file_manager is not None:
-            #     test_manager.current_answer = transcribe_audio(audio_file_manager.recording_file)
-            # else:
-            #     test_manager.current_answer = transcribe_audio(recording_manager.recording_file)
 
         if test_status:
             return jsonify({
@@ -1898,7 +1878,6 @@ def confirm_transcription():
 @app.route('/api/mat-question-sets', methods=['GET'])
 def get_mat_question_sets():
     """Get available Mental Arithmetic Task question sets"""
-    # TODO: ADD ROUTE AND FRONTEND FOR UPLOADING CUSTOM QUESTION SETS
     question_sets = {
         'mat_practice': {
             'name': 'Practice Test (Subtract 5 from 20)',
@@ -1951,7 +1930,7 @@ def process_answer():
         if test_ended:
             recording_manager.stop_recording()
             print("Recording stopped. Transcribing....")
-            
+            time.sleep(0.1) 
             if audio_file_manager is not None:
                 transcription = transcribe_audio(audio_file_manager.recording_file)
             else:
@@ -2056,7 +2035,6 @@ def close_session(session_id):
     """Properly close SSE connection for a session"""
     try:
         if session_id in session_queues:
-            # Signal the queue to close the SSE connection
             session_queues[session_id].put(None)
             del session_queues[session_id]
             print(f"Closed SSE connection for session {session_id}")
@@ -2229,7 +2207,6 @@ def instantiate_modules(template_path):
 
         print(f"Processing {len(data['procedures'])} procedures...")
 
-        # Read experiment-level data collection settings
         collection_methods = data.get('dataCollectionMethods', {})
         if collection_methods:
             print(f"\n--- Data Collection Methods Configuration ---")
@@ -2254,7 +2231,6 @@ def instantiate_modules(template_path):
                 needs_audio_ser = True
                 print("✓ Audio/SER enabled")
         
-        # Check for Mental Arithmetic Task (MAT) in stressor procedures
         for procedure in data.get('procedures', []):
             procedure_name = procedure.get('name', 'Unknown Procedure')
             config_data = procedure.get('configuration', {})
@@ -2301,8 +2277,6 @@ def instantiate_modules(template_path):
         if needs_emotibit:
             print("\n=== EmotiBit Requested ===")
             print("⚠ EmotiBit streaming not yet implemented")
-            # TODO: Add EmotiBit manager when ready
-            # emotibit_manager = EmotiBitManager()
 
         # Initialize test manager if MAT is needed
         if needs_mat:
@@ -2360,7 +2334,7 @@ def upload_config():
         file.save(filepath)
         
         if not validate_json_file(filepath):
-            os.remove(filepath)  # Clean up invalid file
+            os.remove(filepath)  
             return jsonify({'success': False, 'error': 'Invalid JSON format'}), 400
         
         print(f"Config file uploaded: {filename} for {config_type}")
@@ -2471,7 +2445,6 @@ def reset_experiment_managers():
     except Exception as e:
         print(f"Error resetting managers: {e}")
 
-# Serve React app for all non-API routes
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react_app(path):
