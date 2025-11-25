@@ -1,3 +1,35 @@
+-- SER data table 
+CREATE TABLE IF NOT EXISTS ser_data (
+    id BIGSERIAL PRIMARY KEY,
+    experiment_id INTEGER REFERENCES experiments(id) ON DELETE CASCADE,
+    timestamp_unix DOUBLE PRECISION,
+    timestamp_iso TIMESTAMPTZ,
+    file_name VARCHAR(255),
+    transcription TEXT,
+    emotion_label_1 VARCHAR(50),
+    confidence_1 REAL,
+    emotion_label_2 VARCHAR(50),
+    confidence_2 REAL,
+    emotion_label_3 VARCHAR(50),
+    confidence_3 REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- EmotiBit biometric data table (handles all metric types)
+CREATE TABLE IF NOT EXISTS emotibit_data (
+    id BIGSERIAL PRIMARY KEY,
+    experiment_id INTEGER REFERENCES experiments(id) ON DELETE CASCADE,
+    local_timestamp DOUBLE PRECISION NOT NULL,
+    emotibit_timestamp DOUBLE PRECISION NOT NULL,
+    packet_number INTEGER,
+    data_length INTEGER,
+    type_tag VARCHAR(50) NOT NULL,
+    protocol_version INTEGER,
+    data_reliability INTEGER,
+    metric_value REAL NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Experiments/Sessions metadata table
 CREATE TABLE IF NOT EXISTS experiments (
     id SERIAL PRIMARY KEY,
@@ -82,6 +114,14 @@ CREATE INDEX IF NOT EXISTS idx_cardiac_experiment ON cardiac_data(experiment_id)
 CREATE INDEX IF NOT EXISTS idx_audio_timestamp ON audio_transcription_data(timestamp_unix);
 CREATE INDEX IF NOT EXISTS idx_audio_experiment ON audio_transcription_data(experiment_id);
 CREATE INDEX IF NOT EXISTS idx_audio_question_set ON audio_transcription_data(question_set);
+
+CREATE INDEX IF NOT EXISTS idx_emotibit_local_timestamp ON emotibit_data(local_timestamp);
+CREATE INDEX IF NOT EXISTS idx_emotibit_experiment ON emotibit_data(experiment_id);
+CREATE INDEX IF NOT EXISTS idx_emotibit_type_tag ON emotibit_data(type_tag);
+CREATE INDEX IF NOT EXISTS idx_emotibit_composite ON emotibit_data(experiment_id, type_tag, local_timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_ser_experiment ON ser_data(experiment_id);
+CREATE INDEX IF NOT EXISTS idx_ser_timestamp ON ser_data(timestamp_unix);
 
 -- Unified view for cross-data analysis
 CREATE OR REPLACE VIEW unified_sensor_data AS
@@ -185,4 +225,56 @@ SELECT
     NULL::INTEGER as question_index,
     'cardiac' as data_type
 FROM cardiac_data cd
-JOIN experiments e ON cd.experiment_id = e.id;
+JOIN experiments e ON cd.experiment_id = e.id
+
+UNION ALL
+
+-- EmotiBit data
+SELECT 
+    e.experiment_name,
+    e.trial_name,
+    e.subject_id,
+    e.experimenter_name,
+    e.pid,
+    e.class_name,
+    ed.local_timestamp as timestamp_unix,
+    to_timestamp(ed.local_timestamp) as timestamp_iso,
+    NULL::VARCHAR as event_marker,
+    NULL::VARCHAR as condition,
+    NULL::REAL as force,
+    NULL::REAL as respiration_rate,
+    NULL::REAL as heart_rate,
+    NULL::REAL as hrv,
+    NULL::VARCHAR as audio_file,
+    NULL::TEXT as transcription,
+    NULL::VARCHAR as question_set,
+    NULL::INTEGER as question_index,
+    ed.type_tag as data_type
+FROM emotibit_data ed
+JOIN experiments e ON ed.experiment_id = e.id
+
+UNION ALL
+
+-- SER data
+SELECT 
+    e.experiment_name,
+    e.trial_name,
+    e.subject_id,
+    e.experimenter_name,
+    e.pid,
+    e.class_name,
+    sd.timestamp_unix,
+    sd.timestamp_iso,
+    NULL::VARCHAR as event_marker,
+    NULL::VARCHAR as condition,
+    NULL::REAL as force,
+    NULL::REAL as respiration_rate,
+    NULL::REAL as heart_rate,
+    NULL::REAL as hrv,
+    sd.file_name as audio_file,
+    sd.transcription,
+    NULL::VARCHAR as question_set,
+    NULL::INTEGER as question_index,
+    'ser' as data_type
+FROM ser_data sd
+JOIN experiments e ON sd.experiment_id = e.id;

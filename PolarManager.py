@@ -296,7 +296,6 @@ class PolarManager:
                 
                 print(f"Connected to Polar H10 at {self._device_address}")
                 
-                # Start notifications for heart rate measurements
                 await client.start_notify(
                     HEART_RATE_MEASUREMENT_UUID,
                     self.parse_heart_rate_measurement
@@ -304,10 +303,7 @@ class PolarManager:
                 
                 print(f"Data streaming started. Collecting for {duration_seconds} seconds...")
                 
-                # Keep the stream running
                 await asyncio.sleep(duration_seconds)
-                
-                # Stop notifications
                 await client.stop_notify(HEART_RATE_MEASUREMENT_UUID)
                 
                 print("Data collection complete.")

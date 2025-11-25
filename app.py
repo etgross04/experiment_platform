@@ -25,6 +25,64 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+class DatabaseConfigError(Exception):
+    """Raised when database configuration is invalid or incomplete"""
+    pass
+
+def get_database_config():
+    """Get and validate database configuration from environment variables."""
+    required_vars = {
+        'DB_HOST': os.getenv('DB_HOST'),
+        'DB_NAME': os.getenv('DB_NAME'),
+        'DB_USER': os.getenv('DB_USER'),
+        'DB_PASSWORD': os.getenv('DB_PASSWORD'),
+        'DB_PORT': os.getenv('DB_PORT')
+    }
+    
+    missing = [key for key, value in required_vars.items() if not value]
+    
+    if missing:
+        raise DatabaseConfigError(
+            f"Missing required database environment variables: {', '.join(missing)}. "
+            f"Please ensure these are set in your .env file."
+        )
+    
+    try:
+        port = int(required_vars['DB_PORT'])
+        if port < 1 or port > 65535:
+            raise ValueError("Port must be between 1 and 65535")
+    except ValueError as e:
+        raise DatabaseConfigError(f"Invalid DB_PORT: {e}")
+    
+    return {
+        'host': required_vars['DB_HOST'],
+        'database': required_vars['DB_NAME'],
+        'user': required_vars['DB_USER'],
+        'password': required_vars['DB_PASSWORD'],
+        'port': required_vars['DB_PORT']
+    }
+
+def validate_environment():
+    """Validate that all required environment variables are set at startup"""
+    try:
+        get_database_config()
+        print("✓ Database configuration validated successfully")
+    except DatabaseConfigError as e:
+        print("\n" + "="*70)
+        print("CRITICAL: Database configuration error!")
+        print("="*70)
+        print(f"Error: {e}")
+        print("\nPlease create/update your .env file with:")
+        print("  DB_HOST=localhost")
+        print("  DB_NAME=exp_platform_db")
+        print("  DB_USER=exp_user")
+        print("  DB_PASSWORD=your_secure_password")
+        print("  DB_PORT=5432")
+        print("="*70 + "\n")
+        print("WARNING: Database operations will fail until this is fixed\n")
+
+validate_environment()
+
 # SSE connection management
 session_queues = {}
 session_completions = {}
@@ -199,9 +257,9 @@ def push_to_database():
         
         db_config = {
             'host': os.getenv('DB_HOST', 'localhost'),
-            'database': os.getenv('DB_NAME', 'sensor_data'),
-            'user': os.getenv('DB_USER', 'postgres'),
-            'password': os.getenv('DB_PASSWORD', ''),
+            'database': os.getenv('DB_NAME', 'exp_platform_db'),
+            'user': os.getenv('DB_USER', 'exp_user'),
+            'password': os.getenv('DB_PASSWORD'),
             'port': os.getenv('DB_PORT', '5432') 
         }
         

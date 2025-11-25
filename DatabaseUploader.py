@@ -179,6 +179,66 @@ class DatabaseUploader:
         self.conn.commit()
         return len(records)
 
+    def _upload_ser_data(self, csv_path: str, experiment_id: int) -> int:
+        """Upload SER (Speech Emotion Recognition) CSV to database."""
+        df = pd.read_csv(csv_path)
+        
+        records = [
+            (
+                experiment_id,
+                row['timestamp_unix'],
+                row['timestamp_iso'],
+                row['file_name'],
+                row.get('transcription'),
+                row['SER_Emotion_Label_1'],
+                row['SER_Confidence_1'],
+                row['SER_Emotion_Label_2'],
+                row['SER_Confidence_2'],
+                row['SER_Emotion_Label_3'],
+                row['SER_Confidence_3']
+            )
+            for _, row in df.iterrows()
+        ]
+        
+        query = """
+        INSERT INTO ser_data (
+            experiment_id, timestamp_unix, timestamp_iso,
+            file_name, transcription,
+            emotion_label_1, confidence_1,
+            emotion_label_2, confidence_2,
+            emotion_label_3, confidence_3
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        
+        execute_batch(self.cursor, query, records, page_size=1000)
+        self.conn.commit()
+        return len(records)
+
+    def _upload_emotibit_data(self, csv_path: str, experiment_id: int) -> int:
+        """Upload EmotiBit CSV to database."""
+        df = pd.read_csv(csv_path)
+        
+        filename = os.path.basename(csv_path)
+        type_tag = filename.replace('.csv', '').split('_')[-1]
+        metric_column = df.columns[-1]
+        
+        records = [
+            (experiment_id, row['LocalTimestamp'], row['EmotiBitTimestamp'],
+            row['PacketNumber'], row['DataLength'], type_tag,
+            row['ProtocolVersion'], row['DataReliability'], row[metric_column])
+            for _, row in df.iterrows()
+        ]
+        
+        query = """
+        INSERT INTO emotibit_data (experiment_id, local_timestamp, emotibit_timestamp,
+            packet_number, data_length, type_tag, protocol_version, data_reliability, metric_value)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        
+        execute_batch(self.cursor, query, records, page_size=1000)
+        self.conn.commit()
+        return len(records)
+
     def _get_or_create_experiment(self, metadata: Dict) -> int:
         """
         Get existing experiment_id or create new experiment record.
@@ -214,10 +274,8 @@ class DatabaseUploader:
         return experiment_id
     
     def upload_subject_directory(self, subject_dir: str, session_metadata: Dict) -> Dict:
-        """
-        Upload all CSV files from a subject's directory.
-        Updated to handle audio/transcription data.
-        """
+        """Upload ALL CSV files from a subject's directory"""
+        
         result = {
             'uploaded_count': 0,
             'failed_files': [],
@@ -229,49 +287,22 @@ class DatabaseUploader:
             experiment_id = self._get_or_create_experiment(session_metadata)
             print(f"✓ Experiment ID: {experiment_id}")
             
-            # Find all CSV files recursively
-            csv_files = glob.glob(os.path.join(subject_dir, '**', '*.csv'), recursive=True)
-            
-            if not csv_files:
-                print(f"⚠ No CSV files found in {subject_dir}")
-                return result
-            
-            print(f"Found {len(csv_files)} CSV file(s)")
-            
-            for csv_path in csv_files:
-                filename = os.path.basename(csv_path)
+            # ========== 1. ROOT-LEVEL CSV FILES ==========
+            print("\Processing root-level CSV files...")
+            for csv_file in glob.glob(os.path.join(subject_dir, '*.csv')):
+                filename = os.path.basename(csv_file)
                 
                 try:
-                    # Determine file type from filename or detect by columns
-                    if 'event_marker' in filename:
-                        count = self._upload_event_markers(csv_path, experiment_id)
+                    if '_event_markers.csv' in filename:
+                        count = self._upload_event_markers(csv_file, experiment_id)
                         data_type = 'event_markers'
-                    
-                    elif 'respiratory' in filename:
-                        count = self._upload_respiratory_data(csv_path, experiment_id)
-                        data_type = 'respiratory_data'
-                    
-                    elif 'cardiac' in filename:
-                        count = self._upload_cardiac_data(csv_path, experiment_id)
-                        data_type = 'cardiac_data'
-                    
-                    elif 'SER' in filename:
-                        # This is the processed SER file - could be separate table if needed
-                        print(f"⚠ Skipping SER processed file: {filename}")
-                        continue
-                    
+                    elif '_SER.csv' in filename:
+                        count = self._upload_ser_data(csv_file, experiment_id)
+                        data_type = 'ser_data'
                     else:
-                        # Try to detect by checking columns
-                        df_sample = pd.read_csv(csv_path, nrows=1)
-                        columns = set(df_sample.columns)
-                        
-                        # Check if it's audio/transcription data
-                        if 'audio_file' in columns or 'transcription' in columns:
-                            count = self._upload_audio_transcription_data(csv_path, experiment_id)
-                            data_type = 'audio_transcription'
-                        else:
-                            print(f"⚠ Skipping unknown file type: {filename}")
-                            continue
+                        # Audio/transcription data
+                        count = self._upload_audio_transcription_data(csv_file, experiment_id)
+                        data_type = 'audio_transcription'
                     
                     result['uploaded_count'] += 1
                     result['file_details'].append({
@@ -279,39 +310,101 @@ class DatabaseUploader:
                         'data_type': data_type,
                         'rows_uploaded': count
                     })
+                    print(f"{filename} → {data_type} ({count} rows)")
                     
-                    print(f"✓ Uploaded {filename} ({count} rows)")
-                
                 except Exception as e:
-                    print(f"✗ Failed to upload {filename}: {e}")
+                    print(f"  ✗ Failed: {filename}: {e}")
                     result['failed_files'].append({
                         'filename': filename,
                         'error': str(e)
                     })
             
+            # ========== 2. EMOTIBIT DATA FOLDER ==========
+            emotibit_dir = os.path.join(subject_dir, 'emotibit_data')
+            if os.path.exists(emotibit_dir):
+                print("\nProcessing emotibit_data folder...")
+                for csv_file in glob.glob(os.path.join(emotibit_dir, '*.csv')):
+                    filename = os.path.basename(csv_file)
+                    
+                    try:
+                        count = self._upload_emotibit_data(csv_file, experiment_id)
+                        metric_tag = filename.replace('.csv', '').split('_')[-1]
+                        data_type = f'emotibit_{metric_tag}'
+                        
+                        result['uploaded_count'] += 1
+                        result['file_details'].append({
+                            'filename': filename,
+                            'data_type': data_type,
+                            'rows_uploaded': count
+                        })
+                        print(f"{filename} → {data_type} ({count} rows)")
+                        
+                    except Exception as e:
+                        print(f"Failed: {filename}: {e}")
+                        result['failed_files'].append({
+                            'filename': filename,
+                            'error': str(e)
+                        })
+            
+            # ========== 3. CARDIAC DATA FOLDER ==========
+            cardiac_dir = os.path.join(subject_dir, 'cardiac_data')
+            if os.path.exists(cardiac_dir):
+                print("\nProcessing cardiac_data folder...")
+                for csv_file in glob.glob(os.path.join(cardiac_dir, '*.csv')):
+                    filename = os.path.basename(csv_file)
+                    
+                    try:
+                        count = self._upload_cardiac_data(csv_file, experiment_id)
+                        data_type = 'cardiac_data'
+                        
+                        result['uploaded_count'] += 1
+                        result['file_details'].append({
+                            'filename': filename,
+                            'data_type': data_type,
+                            'rows_uploaded': count
+                        })
+                        print(f"{filename} → {data_type} ({count} rows)")
+                        
+                    except Exception as e:
+                        print(f"Failed: {filename}: {e}")
+                        result['failed_files'].append({
+                            'filename': filename,
+                            'error': str(e)
+                        })
+            
+            # ========== 4. RESPIRATORY DATA FOLDER ==========
+            respiratory_dir = os.path.join(subject_dir, 'respiratory_data')
+            if os.path.exists(respiratory_dir):
+                print("\nProcessing respiratory_data folder...")
+                for csv_file in glob.glob(os.path.join(respiratory_dir, '*.csv')):
+                    filename = os.path.basename(csv_file)
+                    
+                    try:
+                        count = self._upload_respiratory_data(csv_file, experiment_id)
+                        data_type = 'respiratory_data'
+                        
+                        result['uploaded_count'] += 1
+                        result['file_details'].append({
+                            'filename': filename,
+                            'data_type': data_type,
+                            'rows_uploaded': count
+                        })
+                        print(f"  ✓ {filename} → {data_type} ({count} rows)")
+                        
+                    except Exception as e:
+                        print(f"Failed: {filename}: {e}")
+                        result['failed_files'].append({
+                            'filename': filename,
+                            'error': str(e)
+                        })
+            
+            print(f"\nUpload complete: {result['uploaded_count']} files uploaded")
+            if result['failed_files']:
+                print(f"{len(result['failed_files'])} files failed")
+            
             return result
-        
+            
         except Exception as e:
             print(f"✗ Upload failed: {e}")
             self.conn.rollback()
             raise
-    
-    def _determine_data_type(self, filename: str) -> Optional[str]:
-        """
-        Determine data type from filename patterns.
-        
-        Returns:
-            'events', 'vernier', 'polar', 'audio', or None
-        """
-        filename_lower = filename.lower()
-        
-        if 'emotibit' in filename_lower or 'event' in filename_lower:
-            return 'events'
-        elif 'vernier' in filename_lower or 'respiratory' in filename_lower:
-            return 'vernier'
-        elif 'polar' in filename_lower or 'hr' in filename_lower:
-            return 'polar'
-        elif 'audio' in filename_lower or 'ser' in filename_lower:
-            return 'audio'
-        else:
-            return None
