@@ -1,3 +1,3 @@
 File structure for experiment folder:
-experiments/templates/<template_name.json>
-experiments/trials/<experiment_name>/<trial_name>
+Saved Experiments: experiments/templates/<template_name.json>
+Subject Data: experiments/subject_data/<experiment_name>/<trial_name>/<subject_id>
