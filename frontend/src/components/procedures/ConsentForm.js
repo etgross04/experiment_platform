@@ -77,35 +77,18 @@ const ConsentForm = forwardRef(({ procedure, sessionId }, ref) => {
     const config = procedure?.configuration || {};
     const documentConfig = config.document || {};
     const wizardData = procedure?.wizardData || {};
+    const rawConfig = wizardData.rawConfiguration?.document || {};
     
-    if (documentConfig.consentFilePath || wizardData.consentFilePath) {
-      setConsentMethod('upload');
-      setConsentData({
-        filePath: documentConfig.consentFilePath || wizardData.consentFilePath,
-        fileName: documentConfig.consentFile || wizardData.consentFile
-      });
-    } else if (documentConfig.consentLink || wizardData.consentLink) {
+    // Check for external link in all possible locations
+    const consentLink = documentConfig.consentLink || wizardData.consentLink || rawConfig.consentLink;
+    
+    if (consentLink) {
       setConsentMethod('link');
-      setConsentData({
-        link: documentConfig.consentLink || wizardData.consentLink
-      });
+      setConsentData({ link: consentLink });
     } else {
-      const rawConfig = wizardData.rawConfiguration?.document || {};
-      if (rawConfig.consentFilePath) {
-        setConsentMethod('upload');
-        setConsentData({
-          filePath: rawConfig.consentFilePath,
-          fileName: rawConfig.consentFile
-        });
-      } else if (rawConfig.consentLink) {
-        setConsentMethod('link');
-        setConsentData({
-          link: rawConfig.consentLink
-        });
-      } else {
-        setConsentMethod('default');
-        setConsentData(null);
-      }
+      // Default to showing instructions
+      setConsentMethod('default');
+      setConsentData(null);
     }
     
     setLoading(false);
@@ -166,29 +149,19 @@ const ConsentForm = forwardRef(({ procedure, sessionId }, ref) => {
         )}
 
         {consentMethod === 'link' && consentData?.link && (
-          <div className="link-container">
-            <h3>Consent Document</h3>
-            <div className="link-viewer">
-              <iframe
-                src={consentData.link}
-                width="100%"
-                height="600px"
-                title="Consent Form"
-                style={{
-                  border: '1px solid #ccc',
-                  borderRadius: '4px'
-                }}
-              >
-                <p>
-                  Your browser does not support displaying this document. 
-                  <a href={consentData.link} target="_blank" rel="noopener noreferrer">
-                    Click here to view the consent form.
-                  </a>
-                </p>
-              </iframe>
-            </div>
-          </div>
-        )}
+        <div className="link-container">
+          <h3>Consent Document</h3>
+          <p style={{ marginBottom: '1rem', color: '#666' }}>
+            The consent form has been opened in a separate window. Please review it carefully before providing your consent below.
+          </p>
+          <p style={{ marginBottom: '1rem' }}>
+            If the consent form did not open automatically, 
+            <a href={consentData.link} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: '#3b82f6' }}>
+              click here to open it
+            </a>.
+          </p>
+        </div>
+      )}
 
         {consentMethod === 'default' && (
           <div className="default-consent-container">
