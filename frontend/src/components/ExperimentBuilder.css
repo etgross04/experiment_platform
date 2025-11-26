@@ -769,6 +769,7 @@
   align-items: center;
   padding: 1.5rem;
   border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 .wizard-header h2 {
   margin: 0;
@@ -836,6 +837,7 @@
   padding: 1.5rem;
   overflow-y: auto;
   text-align: left;
+  min-height: 0;
 }
 .wizard-content h3 {
   margin: 0 0 0.5rem 0;
@@ -893,6 +895,7 @@
   align-items: center;
   padding: 1.5rem;
   border-top: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 .wizard-btn {
   display: flex;

@@ -1287,13 +1287,8 @@ function ProcedureWizard({ procedure, onClose, onSave, config }) {
       const stepConfig = configuration[currentStepData.id];
       if (!stepConfig) return false;
       
-      if (stepConfig.consentMethod === 'upload') {
-        return stepConfig.consentFile; // PDF file must be uploaded
-      } else if (stepConfig.consentMethod === 'link') {
-        return stepConfig.consentLink && stepConfig.consentLink.trim(); // URL must be provided
-      } else {
-        return false; // Must select a method
-      }
+      // Only validate that a link is provided
+      return stepConfig.consentLink && stepConfig.consentLink.trim();
     }
     
     if (procedure.id === 'survey' && currentStepData?.id === 'survey-details') {
@@ -1350,7 +1345,10 @@ function ProcedureWizard({ procedure, onClose, onSave, config }) {
       return;
     }
     onSave(configuration);
-    onClose();
+    // Small delay to ensure state updates complete before closing
+    setTimeout(() => {
+      onClose();
+    }, 100);
   };
 
   if (!currentStepData) return null;
@@ -1425,41 +1423,6 @@ function ProcedureWizard({ procedure, onClose, onSave, config }) {
 
 function WizardStepContent({ stepId, procedureId, value, configuration, onChange }) {
   const [formData, setFormData] = useState(value || {});
-
-  const handleConsentUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.pdf')) {
-      alert('Please upload a valid PDF file');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('experiment_name', procedureId); 
-
-    try {
-      const response = await fetch('/api/upload-consent-form', {
-        method: 'POST',
-        body: formData
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        handleInputChange('consentFile', file.name);
-        handleInputChange('consentFilePath', result.filePath);
-        alert('Consent form uploaded successfully!');
-      } else {
-        throw new Error(result.error || 'Upload failed');
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      alert(`Upload failed: ${error.message}`);
-    }
-  };
-
   const handleInputChange = (key, val) => {
     const newData = { ...formData, [key]: val };
     setFormData(newData);
@@ -1644,9 +1607,8 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
 
     case 'media-selection':
       const videoOptions = [
-        { value: 'neutral_1', label: 'Neutral 1 - Calm Nature Scenes', duration: '5 min' },
-        { value: 'neutral_2', label: 'Neutral 2 - Abstract Patterns', duration: '5 min' },
-        { value: 'neutral_3', label: 'Neutral 3 - Gentle Water Flow', duration: '5 min' }
+        { value: 'neutral_1', label: 'Neutral 1 - Calm Street Scene', duration: '5 min' },
+        { value: 'neutral_2', label: 'Neutral 2 - Calm Street Scene', duration: '5 min' },
       ];
 
       return (
@@ -2202,58 +2164,17 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
     case 'document':
       return (
         <div className="form-group">
-          <label>Consent Form Method</label>
-          <div className="radio-group">
-            <label className="radio-label">
-              <input 
-                type="radio" 
-                name="consentMethod"
-                value="upload"
-                checked={formData.consentMethod === 'upload'}
-                onChange={(e) => handleInputChange('consentMethod', e.target.value)}
-              />
-              Upload PDF File
-            </label>
-            <label className="radio-label">
-              <input 
-                type="radio" 
-                name="consentMethod"
-                value="link"
-                checked={formData.consentMethod === 'link'}
-                onChange={(e) => handleInputChange('consentMethod', e.target.value)}
-              />
-              External Link
-            </label>
-          </div>
-
-          {formData.consentMethod === 'upload' && (
-            <div className="upload-section">
-              <label>Upload Consent Document (PDF)</label>
-              <input 
-                type="file" 
-                accept=".pdf"
-                onChange={(e) => handleConsentUpload(e)}
-              />
-              {formData.consentFile && (
-                <div className="file-status">
-                  ✅ File uploaded: {formData.consentFile}
-                </div>
-              )}
-            </div>
-          )}
-
-          {formData.consentMethod === 'link' && (
-            <div className="link-section">
-              <label>External Consent Form Link</label>
-              <input 
-                type="url" 
-                placeholder="https://example.com/consent-form"
-                value={formData.consentLink || ''}
-                onChange={(e) => handleInputChange('consentLink', e.target.value)}
-              />
-              <small>Enter the full URL to your external consent form</small>
-            </div>
-          )}
+          <label>External Consent Form Link *</label>
+          <input 
+            type="url" 
+            placeholder="https://example.com/consent-form"
+            value={formData.consentLink || ''}
+            onChange={(e) => handleInputChange('consentLink', e.target.value)}
+            style={{ width: '100%', marginBottom: '0.5rem' }}
+          />
+          <small style={{ color: '#666', display: 'block', marginBottom: '1rem' }}>
+            Enter the full URL to your external consent form. This will be opened in a separate window for the participant to review.
+          </small>
 
           <label className="checkbox-label">
             <input 
@@ -2447,13 +2368,13 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
     default:
       return (
         <div className="form-group">
-          <label>Configuration Notes</label>
+          {/* <label>Configuration Notes</label>
           <textarea 
             value={formData.notes || ''}
             onChange={(e) => handleInputChange('notes', e.target.value)}
             placeholder="Add configuration details for this step..."
             rows={4}
-          />
+          /> */}
         </div>
       );
   }
