@@ -226,20 +226,18 @@ function PreTestInstructionsWizard({
         return;
       }
 
-      // Check for external link first
-      if (consentConfig.consentMethod === 'link' && consentConfig.consentLink) {
-        // External link - open BOTH the external link AND the subject interface
-        window.open(consentConfig.consentLink, 'consent-external', 'width=800,height=600,scrollbars=yes,resizable=yes');
-        // Also launch subject interface showing participant form
-        launchSubjectInterface();
-      } else if (consentConfig.consentMethod === 'upload' && consentConfig.consentFilePath) {
-        // Uploaded file - open BOTH the file AND the subject interface  
-        window.open(`/consent-forms/${consentConfig.consentFilePath}`, 'consent-file', 'width=800,height=600,scrollbars=yes,resizable=yes');
-        // Also launch subject interface showing participant form
-        launchSubjectInterface();
-      } else {
-        // No external link or file - launch embedded consent form
-        launchEmbeddedConsentForm();
+      // Always launch the embedded consent form (with checkbox)
+      launchEmbeddedConsentForm();
+      
+      // If there's an external link, also open it in a separate window for reference
+      if (consentConfig.consentLink) {
+        setTimeout(() => {
+          window.open(
+            consentConfig.consentLink, 
+            'consent-external', 
+            'width=800,height=600,left=100,top=100,scrollbars=yes,resizable=yes'
+          );
+        }, 500);
       }
     };
 

@@ -342,12 +342,7 @@
       {
         "id": "document",
         "title": "Consent Document",
-        "description": "Upload IRB-approved consent form"
-      },
-      {
-        "id": "signature",
-        "title": "Signature Method",
-        "description": "Digital signature or checkbox acknowledgment"
+        "description": "Provide the consent form URL (e.g. DocuSign)"
       }
     ],
     "demographics": [
