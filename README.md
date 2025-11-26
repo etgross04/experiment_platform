@@ -44,7 +44,7 @@ This platform provides researchers with a comprehensive toolkit for designing an
 - SER Baseline Recording
 - Integrated Google surveys and questionnaires
 - Break/rest periods with media
-- PsychoPy external task integration
+- Creation of event markers for tasks performed in external software (e.g. PsychoPy)
 - Demographics collection through external surveys
 
 ### Session Management
