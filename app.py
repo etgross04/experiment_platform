@@ -1086,6 +1086,7 @@ def process_procedure_for_psychopy(proc_data):
             # PsychoPy integration fields (NEW)
             'usePsychoPy': proc_data.get('configuration', {}).get('psychopy-setup', {}).get('usePsychoPy', False),
             'psychopyInstructions': proc_data.get('configuration', {}).get('psychopy-setup', {}).get('psychopyInstructions'),
+            'platform': proc_data.get('configuration', {}).get('psychopy-setup', {}).get('platform', 'PsychoPy'),
             
             # SART specific fields (NEW)
             'sartVersion': proc_data.get('configuration', {}).get('task-setup', {}).get('sartVersion'),

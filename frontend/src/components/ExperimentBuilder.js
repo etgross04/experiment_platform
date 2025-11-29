@@ -2028,34 +2028,45 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
       }
 
     case 'psychopy-setup':
-      return (
-        <div className="form-group">
-          <label className="checkbox-label">
-            <input 
-              type="checkbox" 
-              checked={formData.usePsychoPy || false}
-              onChange={(e) => handleInputChange('usePsychoPy', e.target.checked)}
-            />
-            Perform this task in external software (e.g., PsychoPy)
-          </label>
-          <small style={{ color: '#666', display: 'block', marginTop: '8px' }}>
-            When checked, participants will be directed to switch to different software to complete this task.
-          </small>
-          
-          {/* {formData.usePsychoPy && (
-            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8fafc', borderRadius: '0.5rem' }}>
-              <label>Task Instructions for Participants</label>
-              <textarea 
-                value={formData.psychopyInstructions || ''}
-                onChange={(e) => handleInputChange('psychopyInstructions', e.target.value)}
-                placeholder="Enter any specific instructions for participants about this PsychoPy task..."
-                rows={3}
-                style={{ width: '100%', marginTop: '0.5rem' }}
-              />
-            </div>
-          )} */}
-        </div>
-      );
+    return (
+      <div className="form-group">
+        <label className="checkbox-label">
+          <input 
+            type="checkbox" 
+            checked={formData.usePsychoPy || false}
+            onChange={(e) => handleInputChange('usePsychoPy', e.target.checked)}
+          />
+          Perform this task in external software
+        </label>
+        <small style={{ color: '#666', display: 'block', marginTop: '8px' }}>
+          When checked, participants will be directed to switch to different software to complete this task.
+        </small>
+        
+        {formData.usePsychoPy && (
+          <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8fafc', borderRadius: '0.5rem' }}>
+            <label>Select External Platform *</label>
+            <select
+              value={formData.platform || 'PsychoPy'}
+              onChange={(e) => handleInputChange('platform', e.target.value)}
+              style={{ width: '100%', marginTop: '0.5rem', marginBottom: '1rem' }}
+            >
+              <option value="PsychoPy">PsychoPy</option>
+              <option value="OpenSesame">OpenSesame</option>
+              <option value="jsPsych">jsPsych</option>
+              <option value="E-Prime">E-Prime</option>
+              <option value="Inquisit">Inquisit</option>
+              <option value="Gorilla">Gorilla</option>
+              <option value="lab.js">lab.js</option>
+              <option value="PsyToolkit">PsyToolkit</option>
+              <option value="Other">Other</option>
+            </select>
+            <small style={{ color: '#666', display: 'block', marginBottom: '1rem' }}>
+              Select the platform where this procedure will be executed
+            </small>
+          </div>
+        )}
+      </div>
+    );
 
     case 'task-setup':
       return (

@@ -15,6 +15,7 @@ function PreTestInstructionsWizard({
   // Shared state props
   emotiBitRunning,
   vernierRunning,
+  polarRunning,
   selectedMicrophone,
   audioDevices,
   isLoadingDevices,
@@ -23,6 +24,7 @@ function PreTestInstructionsWizard({
   // Shared functions
   toggleEmotiBit,
   toggleVernier,
+  togglePolar,
   handleMicrophoneChange,
   resetAudio,
   testAudio,
@@ -221,25 +223,25 @@ function PreTestInstructionsWizard({
 
   const renderConsentStep = () => {
     const handleConsentLaunch = () => {
-      if (!consentConfig) {
-        alert('No consent form configuration found. Please configure the consent form in the experiment builder.');
-        return;
-      }
+    if (!consentConfig) {
+      alert('No consent form configuration found. Please configure the consent form in the experiment builder.');
+      return;
+    }
 
-      // Always launch the embedded consent form (with checkbox)
-      launchEmbeddedConsentForm();
-      
-      // If there's an external link, also open it in a separate window for reference
-      if (consentConfig.consentLink) {
-        setTimeout(() => {
-          window.open(
-            consentConfig.consentLink, 
-            'consent-external', 
-            'width=800,height=600,left=100,top=100,scrollbars=yes,resizable=yes'
-          );
-        }, 500);
-      }
-    };
+    // Always launch the embedded consent form (with checkbox)
+    launchEmbeddedConsentForm();
+    
+    // If there's an external link, also open it in a separate window for reference
+    if (consentConfig.consentLink) {
+      setTimeout(() => {
+        window.open(
+          consentConfig.consentLink, 
+          'consent-external', 
+          'width=800,height=600,left=100,top=100,scrollbars=yes,resizable=yes'
+        );
+      }, 500);
+    }
+  };
 
     return (
       <div className="consent-step-content">
@@ -669,11 +671,13 @@ function SettingsPanel({
   currentSession,
   emotiBitRunning,
   vernierRunning,
+  polarRunning,
   selectedMicrophone,
   audioDevices,
   isLoadingDevices,
   toggleEmotiBit,
   toggleVernier,
+  togglePolar,
   handleMicrophoneChange,
   resetAudio,
   testAudio,
@@ -785,6 +789,23 @@ function SettingsPanel({
               </div>
             )}
 
+            {availableMetrics.includes('polar_hr') && (
+            <div className="metric-control-group">
+              <h5>Heart Rate (Polar H10 Belt)</h5>
+              <button 
+                onClick={togglePolar}
+                className={polarRunning ? 'stop-btn' : 'start-btn'}
+                disabled={!allowEventMarkers}
+              >
+                {polarRunning ? '⏹️ Stop Polar HR Stream' : '▶️ Start Polar HR Stream'}
+              </button>
+              {!allowEventMarkers && (
+                <small style={{ color: '#999', display: 'block', marginTop: '4px' }}>
+                  ⚠️ Waiting for participant registration to enable streaming
+                </small>
+              )}
+            </div>
+          )}
             <div className="metric-control-group">
               <h5>Emotibit Ground Truth Data</h5>
               <p className="emotibit-description">
@@ -968,6 +989,7 @@ function ExperimenterInterface() {
   // Shared device/system state
   const [emotiBitRunning, setEmotiBitRunning] = useState(false);
   const [vernierRunning, setVernierRunning] = useState(false);
+  const [polarRunning, setPolarRunning] = useState(false);
   const [selectedMicrophone, setSelectedMicrophone] = useState('');
   const [audioDevices, setAudioDevices] = useState([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
@@ -1398,6 +1420,35 @@ useEffect(() => {
     console.log(`Vernier stream ${!vernierRunning ? 'started' : 'stopped'}`);
   };
 
+  const togglePolar = async () => {
+    const newState = !polarRunning;
+    const endpoint = newState ? 'start_polar_manager' : 'stop_polar_manager';
+    
+    try {
+      const response = await fetch(`/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+
+      if (!response.ok) {
+        throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      setPolarRunning(newState);
+      console.log(`Polar HR ${newState ? 'started' : 'stopped'}`);
+      console.log('Server response:', data.message || data);
+      
+    } catch (error) {
+      console.error(`Error ${newState ? 'starting' : 'stopping'} Polar HR manager:`, error);
+      alert(`Failed to ${newState ? 'start' : 'stop'} Polar HR manager. Please try again.`);
+    }
+  };
+
   const startAudioTest = async () => {
     if (!currentSession) {
       alert('No active session found');
@@ -1748,13 +1799,13 @@ useEffect(() => {
     }
   };
 
-  const getAllMetrics = () => {
+ const getAllMetrics = () => {
     if (!experimentData || !experimentData.procedures) return [];
     
     const allMetrics = new Set();
     
     experimentData.procedures.forEach(proc => {
-      // if (proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors) {
+      // if  (proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors) {
       //   const sensors = proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors || [];
         
       //   sensors.forEach(sensor => {
@@ -1807,9 +1858,22 @@ useEffect(() => {
       }
     });
     
+    // Check data collection methods configuration
+    if (experimentData.dataCollectionMethods) {
+      if (experimentData.dataCollectionMethods.polar_hr) {
+        allMetrics.add('polar_hr');
+      }
+      if (experimentData.dataCollectionMethods.vernier_resp) {
+        allMetrics.add('respiratory');
+      }
+      if (experimentData.dataCollectionMethods.emotibit) {
+        allMetrics.add('biometrics');
+      }
+    }
     return Array.from(allMetrics);
   };
 
+  
   const handlePreTestInstructionsComplete = () => {
     setPreTestCompleted(true);
     
@@ -1826,6 +1890,7 @@ useEffect(() => {
     }
   };
 
+  
   const renderSetupForm = () => {
     return (
       <div className="setup-form-container">
@@ -2167,12 +2232,14 @@ useEffect(() => {
         // Shared state
         emotiBitRunning={emotiBitRunning}
         vernierRunning={vernierRunning}
+        polarRunning={polarRunning}
         selectedMicrophone={selectedMicrophone}
         audioDevices={audioDevices}
         isLoadingDevices={isLoadingDevices}
         // Shared functions
         toggleEmotiBit={toggleEmotiBit}
         toggleVernier={toggleVernier}
+        togglePolar={togglePolar}
         handleMicrophoneChange={handleMicrophoneChange}
         resetAudio={resetAudio}
         testAudio={testAudio}
@@ -2196,6 +2263,7 @@ useEffect(() => {
           // Shared state
           emotiBitRunning={emotiBitRunning}
           vernierRunning={vernierRunning}
+          polarRunning={polarRunning}
           selectedMicrophone={selectedMicrophone}
           audioDevices={audioDevices}
           isLoadingDevices={isLoadingDevices}
@@ -2204,6 +2272,7 @@ useEffect(() => {
           // Shared functions
           toggleEmotiBit={toggleEmotiBit}
           toggleVernier={toggleVernier}
+          togglePolar={togglePolar}
           handleMicrophoneChange={handleMicrophoneChange}
           resetAudio={resetAudio}
           testAudio={testAudio}

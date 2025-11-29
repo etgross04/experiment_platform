@@ -672,7 +672,13 @@ function SubjectInterface() {
         <div className="procedure-content">
           {ProcedureComponent ? (
             <ProcedureComponent
-              procedure={currentProcedure}
+              procedure={{
+                ...currentProcedure,
+                platform: currentProcedure.configuration?.['psychopy-setup']?.platform || 
+                          currentProcedure.wizardData?.platform || 
+                          currentProcedure.platform || 
+                          'PsychoPy'
+              }}
               sessionId={sessionId}
               onTaskComplete={handleTaskComplete}
               ref={procedureComponentRef}
