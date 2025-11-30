@@ -8,7 +8,6 @@ import './App.css';
 function App() {
   const [currentView, setCurrentView] = useState('home');
 
-  // Check URL parameters on mount to handle deep linking
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const view = urlParams.get('view');
@@ -35,7 +34,6 @@ function App() {
       case 'builder':
         return <ExperimentBuilder onBack={() => {
           setCurrentView('home');
-          // Clear URL parameters when going back
           window.history.replaceState({}, document.title, window.location.pathname);
         }} />;
       case 'runner':

@@ -22,7 +22,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import './SurveyComponent.css'; // Reuse survey styles
+import './SurveyComponent.css';
 
 const DemographicsSurveyComponent = ({ procedure, sessionId }) => {
   const [surveyUrl, setSurveyUrl] = useState('');

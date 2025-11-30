@@ -296,7 +296,7 @@ const MATComponent = ({ procedure, sessionId, onTaskComplete }) => {
       setTestStatus("Something went wrong. Please repeat your answer.");
       setCountdownTimeLeft(testConfig.countdownTime);
       setTimerEnded(false);
-      isPausedRef.current = false; // Update ref
+      isPausedRef.current = false; 
     } finally {
       setIsProcessing(false);
       abortControllerRef.current = null;

@@ -21,7 +21,6 @@ function PsychoPyTransitionComponent({ procedure, sessionId }) {
   const [taskState, setTaskState] = useState('instructions');
   const startPsychoPyTask = () => {
     setTaskState('psychopy');
-    // setTimeElapsed(0);
   };
 
   const getCustomInstructions = () => {

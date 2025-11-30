@@ -68,7 +68,7 @@ const ConsentForm = forwardRef(({ procedure, sessionId }, ref) => {
         console.log('Consent recorded successfully');
       } catch (error) {
         console.error('Error recording consent:', error);
-        throw error; // Re-throw so parent can handle
+        throw error; 
       }
     }
   }));
@@ -78,15 +78,12 @@ const ConsentForm = forwardRef(({ procedure, sessionId }, ref) => {
     const documentConfig = config.document || {};
     const wizardData = procedure?.wizardData || {};
     const rawConfig = wizardData.rawConfiguration?.document || {};
-    
-    // Check for external link in all possible locations
     const consentLink = documentConfig.consentLink || wizardData.consentLink || rawConfig.consentLink;
     
     if (consentLink) {
       setConsentMethod('link');
       setConsentData({ link: consentLink });
     } else {
-      // Default to showing instructions
       setConsentMethod('default');
       setConsentData(null);
     }

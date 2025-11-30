@@ -47,18 +47,8 @@ const SERBaselineComponent = ({ sessionId, onTaskComplete, procedure }) => {
 
   const getQuestionSet = () => {
     const questionSet = procedure?.configuration?.['question-set']?.questionSet;
-    return questionSet || 'ser_1'; // Default to ser_1 if not configured
+    return questionSet || 'ser_1';
   };
-
-  // const getQuestionSetDisplayName = () => {
-  //   const questionSet = getQuestionSet();
-  //   const displayNames = {
-  //     'ser_1': 'Standard Baseline Questions',
-  //     'ser_2': 'Extended Baseline Questions', 
-  //     'ser_3': 'Emotional Baseline Questions'
-  //   };
-  //   return displayNames[questionSet] || 'Standard Baseline Questions';
-  // };
 
   const handleBegin = async () => {
     try {

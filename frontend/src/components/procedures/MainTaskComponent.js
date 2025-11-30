@@ -398,7 +398,6 @@ const MainTaskComponent = ({
     );
   }
 
-  // Original full UI (kept for backward compatibility if needed)
   return (
     <div className="main-task-component">
       <div className="procedure-header">

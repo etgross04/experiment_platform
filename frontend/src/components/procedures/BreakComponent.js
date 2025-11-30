@@ -39,8 +39,6 @@ const BreakComponent = ({ procedure, sessionId, onTaskComplete }) => {
   };
 
   const { selectedVideo, duration } = getBreakConfig();
-
-  // Map video IDs to actual video files
   const getVideoFile = (videoId) => {
     const videoMap = {
       'neutral_1': 'Video1.mp4',
