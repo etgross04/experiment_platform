@@ -12,6 +12,7 @@ function PreTestInstructionsWizard({
   allowEventMarkers,
   currentSession,
   experimentData,
+
   // Shared state props
   emotiBitRunning,
   vernierRunning,
@@ -21,6 +22,7 @@ function PreTestInstructionsWizard({
   isLoadingDevices,
   audioTestStarted,
   audioTestCompleted,
+
   // Shared functions
   toggleEmotiBit,
   toggleVernier,
@@ -108,18 +110,15 @@ function PreTestInstructionsWizard({
     
     if (!consentProcedure) return null;
     
-    // Check multiple possible locations for consent configuration
     const config = consentProcedure.configuration?.document || {};
     const wizardData = consentProcedure.wizardData || {};
     const rawConfig = wizardData.rawConfiguration?.document || {};
     
-    // Return configuration with fallback chain
     return {
       consentMethod: config.consentMethod || wizardData.consentMethod || rawConfig.consentMethod,
       consentLink: config.consentLink || wizardData.consentLink || rawConfig.consentLink,
       consentFilePath: config.consentFilePath || wizardData.consentFilePath || rawConfig.consentFilePath,
       consentFile: config.consentFile || wizardData.consentFile || rawConfig.consentFile,
-      // Include the entire procedure for passing to ConsentForm component
       procedure: consentProcedure
     };
   };
@@ -156,7 +155,6 @@ function PreTestInstructionsWizard({
   };
 
   const renderInstructionStep = (stepData) => {
-    // Check if we're on sensor-placement step 3 (Signal Verification)
     const isSensorStep3 = currentStep === 3; // Step 0 is consent, 1-3 are sensor steps
     const lines = stepData.content.split('\n');
     
@@ -168,7 +166,6 @@ function PreTestInstructionsWizard({
         <div className="instruction-content">
           {lines.map((line, index) => {
             const isEmptyLine = line.trim() === '';
-            // Show button after "2. Open the EmotiBit monitoring software on the computer"
             const shouldShowButton = isSensorStep3 && line.includes('2. Open the EmotiBit monitoring software');
             
             return (
@@ -212,7 +209,6 @@ function PreTestInstructionsWizard({
       return;
     }
     
-    // Open the subject interface in consent mode (will show ConsentForm component first)
     const consentUrl = `http://localhost:3000/subject?session=${currentSession}&mode=consent`;
     window.open(
       consentUrl, 
@@ -228,10 +224,8 @@ function PreTestInstructionsWizard({
       return;
     }
 
-    // Always launch the embedded consent form (with checkbox)
     launchEmbeddedConsentForm();
     
-    // If there's an external link, also open it in a separate window for reference
     if (consentConfig.consentLink) {
       setTimeout(() => {
         window.open(
@@ -329,6 +323,25 @@ function PreTestInstructionsWizard({
               )}
             </div>
           )}
+
+          {availableMetrics.includes('polar_hr') && (
+            <div className="metric-control-group">
+              <h5>Heart Rate (Polar H10 Belt)</h5>
+              <button 
+                onClick={togglePolar}
+                className={polarRunning ? 'stop-btn' : 'start-btn'}
+                disabled={!allowEventMarkers}
+              >
+                {polarRunning ? '⏹️ Stop Polar HR Stream' : '▶️ Start Polar HR Stream'}
+              </button>
+              {!allowEventMarkers && (
+                <small style={{ color: '#999', display: 'block', marginTop: '4px' }}>
+                  ⚠️ Waiting for participant registration to enable streaming
+                </small>
+              )}
+            </div>
+          )}
+
           {availableMetrics.includes('audio_ser') && (
             <div className="metric-control-group">
               <h5>Audio Recording / SER</h5>
@@ -985,8 +998,6 @@ function ExperimenterInterface() {
 
   const [setupErrors, setSetupErrors] = useState({});
   const [sessionInfo, setSessionInfo] = useState(null);
-
-  // Shared device/system state
   const [emotiBitRunning, setEmotiBitRunning] = useState(false);
   const [vernierRunning, setVernierRunning] = useState(false);
   const [polarRunning, setPolarRunning] = useState(false);
@@ -1166,7 +1177,6 @@ function ExperimenterInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load audio devices when session is set and audio is needed
 useEffect(() => {
   console.log('=== AUDIO DETECTION DEBUG ===');
   console.log('currentSession:', currentSession);
@@ -1181,7 +1191,6 @@ useEffect(() => {
     return;
   }
   
-  // Check if audio is needed by examining all procedures
   const needsAudio = experimentData.procedures.some(proc => {
     console.log('Checking procedure:', proc.name, 'id:', proc.id);
     console.log('  configuration:', proc.configuration);
@@ -1197,7 +1206,6 @@ useEffect(() => {
       return true;
     }
 
-    // Check for audio in task descriptions
     if (proc.configuration?.["task-description"]?.selectedTasks) {
       const tasks = proc.configuration["task-description"].selectedTasks;
       console.log('  task-description tasks:', tasks);
@@ -1207,13 +1215,11 @@ useEffect(() => {
       }
     }
     
-    // Check for baseline recording or other audio procedures
     if (proc.wizardData?.recordingDuration || proc.id === 'baseline-recording') {
       console.log('  AUDIO NEEDED: wizardData.recordingDuration or baseline-recording');
       return true;
     }
-    
-    // Check for stressor types that need audio
+
     if (proc.configuration?.["stressor-type"]?.stressorType === "Mental Arithmetic Task") {
       console.log('  AUDIO NEEDED: Mental Arithmetic Task');
       return true;
@@ -1223,7 +1229,6 @@ useEffect(() => {
       return true;
     }
     
-    // Check for SER procedures
     if (proc.id === 'ser-baseline' || proc.name.toLowerCase().includes('ser baseline')) {
       console.log('  AUDIO NEEDED: SER baseline procedure');
       return true;
@@ -1708,7 +1713,6 @@ useEffect(() => {
       return { name: 'No procedures', fullName: '', estimatedDuration: 0, selectedMetrics: [] };
     }
     
-    // Filter out consent procedures - same filter you're already using
     const filteredProcedures = experimentData.procedures.filter(
       procedure => procedure.id !== 'consent' && 
                    procedure.id !== 'data-collection' && 
@@ -1719,7 +1723,6 @@ useEffect(() => {
       return { name: 'No procedures', fullName: '', estimatedDuration: 0, selectedMetrics: [] };
     }
     
-    // If current procedure is consent or data-collection, show first non-consent/non-data-collection procedure
     const currentProc = experimentData.procedures[currentProcedure];
     if (currentProc && (currentProc.id === 'consent' || 
                         currentProc.id === 'data-collection' || 
@@ -1727,7 +1730,6 @@ useEffect(() => {
       return filteredProcedures[0];
     }
     
-    // Find current procedure in filtered array
     const filteredIndex = filteredProcedures.findIndex(proc => proc === currentProc);
     return filteredIndex >= 0 ? filteredProcedures[filteredIndex] : filteredProcedures[0];
   };
@@ -1735,14 +1737,12 @@ useEffect(() => {
   const isExperimentComplete = () => {
     if (!experimentData || !experimentData.procedures) return false;
     
-    // Filter out consent and data-collection procedures (same logic you're using elsewhere)
     const filteredProcedures = experimentData.procedures.filter(
       procedure => procedure.id !== 'consent' && 
                    procedure.id !== 'data-collection' && 
                    !procedure.name?.toLowerCase().includes('consent')
     );
     
-    // Check if all non-consent procedures are completed
     const allProcedureIndices = filteredProcedures.map(proc => 
       experimentData.procedures.findIndex(p => p === proc)
     );
@@ -1771,7 +1771,6 @@ useEffect(() => {
       if (response.ok) {
         alert('Experiment completed successfully! The system has been reset.');
         
-        // Try to navigate the opener window back to home (if it exists)
         if (window.opener && !window.opener.closed) {
           try {
             window.opener.location.href = window.opener.location.origin;
@@ -1781,7 +1780,6 @@ useEffect(() => {
           }
         }
         
-        // Close this experimenter window
         window.close();
         
         // Fallback: if window.close() doesn't work (some browsers block it),
@@ -1805,19 +1803,6 @@ useEffect(() => {
     const allMetrics = new Set();
     
     experimentData.procedures.forEach(proc => {
-      // if  (proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors) {
-      //   const sensors = proc.configuration?.sensors?.selectedSensors || proc.wizardData?.selectedSensors || [];
-        
-      //   sensors.forEach(sensor => {
-      //     if (sensor.includes('Heart Rate') || sensor.includes('EEG') || sensor.includes('EDA')) {
-      //       allMetrics.add('biometrics');
-      //     }
-      //     if (sensor.includes('Respiration')) {
-      //       allMetrics.add('respiratory');
-      //     }
-      //   });
-      // }
-      
       if (proc.id === 'prs' || proc.name.toLowerCase().includes('perceived restorativeness')) {
         allMetrics.add('audio_ser');
       }
@@ -1858,7 +1843,6 @@ useEffect(() => {
       }
     });
     
-    // Check data collection methods configuration
     if (experimentData.dataCollectionMethods) {
       if (experimentData.dataCollectionMethods.polar_hr) {
         allMetrics.add('polar_hr');
@@ -1877,7 +1861,6 @@ useEffect(() => {
   const handlePreTestInstructionsComplete = () => {
     setPreTestCompleted(true);
     
-    // Advance currentProcedure to first real procedure (skip consent and data-collection)
     if (experimentData && experimentData.procedures) {
       const firstRealProcedureIndex = experimentData.procedures.findIndex(
         proc => proc.id !== 'consent' && 
@@ -1971,7 +1954,6 @@ useEffect(() => {
     );
   };
 
-  // const currentProcInfo = getCurrentProcedureInfo();
   const availableMetrics = getAllMetrics();
 
   if (showSetupForm) {
@@ -2080,10 +2062,7 @@ useEffect(() => {
                                  procedure.id !== 'data-collection' && 
                                  !procedure.name?.toLowerCase().includes('consent'))
             .map((procedure, index) => {
-                // Get the actual index for this procedure
                 const actualIndex = experimentData.procedures.findIndex(proc => proc === procedure);
-                
-                // Use the same logic as jumpToProcedure for determining if button should be enabled
                 const canAccess = actualIndex === currentProcedure || 
                                 completedProcedures.includes(actualIndex) ||
                                 (actualIndex > 0 && completedProcedures.includes(actualIndex - 1)) ||
@@ -2229,21 +2208,18 @@ useEffect(() => {
         allowEventMarkers={participantRegistered}
         launchSubjectInterface={launchSubjectInterface}
         currentSession={currentSession}
-        // Shared state
         emotiBitRunning={emotiBitRunning}
         vernierRunning={vernierRunning}
         polarRunning={polarRunning}
         selectedMicrophone={selectedMicrophone}
         audioDevices={audioDevices}
         isLoadingDevices={isLoadingDevices}
-        // Shared functions
         toggleEmotiBit={toggleEmotiBit}
         toggleVernier={toggleVernier}
         togglePolar={togglePolar}
         handleMicrophoneChange={handleMicrophoneChange}
         resetAudio={resetAudio}
         testAudio={testAudio}
-        // Add these new props
         openEmotibitFilePicker={openEmotibitFilePicker}
         uploadEmotibitStatus={uploadEmotibitStatus}
         emotibitFilePath={emotibitFilePath}
@@ -2260,6 +2236,7 @@ useEffect(() => {
           allowEventMarkers={participantRegistered}
           currentSession={currentSession}
           experimentData={experimentData}
+          
           // Shared state
           emotiBitRunning={emotiBitRunning}
           vernierRunning={vernierRunning}
@@ -2269,6 +2246,7 @@ useEffect(() => {
           isLoadingDevices={isLoadingDevices}
           audioTestStarted={audioTestStarted}
           audioTestCompleted={audioTestCompleted}
+
           // Shared functions
           toggleEmotiBit={toggleEmotiBit}
           toggleVernier={toggleVernier}
