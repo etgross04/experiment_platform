@@ -184,10 +184,9 @@ function SubjectInterface() {
       loadExperimentData(session);
     }
 
-    // Check if we're in consent mode
     if (mode === 'consent') {
       setConsentMode(true);
-      setShowForm(false); // Don't show participant form initially
+      setShowForm(false); 
     }
   }, []);
 
@@ -521,16 +520,6 @@ function SubjectInterface() {
         }
     }
   };
-
-  // const getPRSSequenceNumber = (currentProcedureIndex, experimentData) => {
-  //   if (!experimentData?.procedures) return 1;
-    
-  //   const prsCount = experimentData.procedures
-  //     .slice(0, currentProcedureIndex + 1)
-  //     .filter(proc => proc.id === 'prs').length;
-    
-  //   return prsCount;
-  // };
 
   const renderParticipantForm = () => {
     return (
