@@ -108,34 +108,36 @@ class VernierManager:
 
     def set_filenames(self):
         if not self.data_folder:
-            print("Data folder not set. Please set the data folder before setting filenames.")
-            return
+            raise ValueError("Data folder not set. Call set_data_folder() first.")
 
         if not self._subject_id:
-            print("Subject ID not set. Please set metadata before setting filenames.")
-            return
+            raise ValueError("Subject ID not set. Call set_metadata() first.")
         
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.hdf5_filename = os.path.join(self.data_folder, f"{current_date}_{self._subject_id}_respiratory_data_{self._num_crashes}.h5")
         self.csv_filename = os.path.join(self.data_folder, f"{current_date}_{self._subject_id}_respiratory_data_{self._num_crashes}.csv")
+        print(f"✓ Vernier HDF5 filename set to: {self.hdf5_filename}")
+        print(f"✓ Vernier CSV filename set to: {self.csv_filename}")
 
     def initialize_hdf5_file(self):
-        # current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        # current_date = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        # self.hdf5_filename = os.path.join(self.data_folder, f"{current_date}_{subject_id}_respiratory_data.h5")
-        # self.csv_filename = os.path.join(self.data_folder, f"{current_date}_{subject_id}_respiratory_data.csv")
-
+        if not self.hdf5_filename:
+            raise ValueError("HDF5 filename not set. Call set_filenames() first.")
+        
+        if not self._subject_id:
+            raise ValueError("Subject ID not set. Call set_metadata() first.")
+        
+        if not self.data_folder:
+            raise ValueError("Data folder not set. Call set_data_folder() first.")
+        
+        os.makedirs(os.path.dirname(self.hdf5_filename), exist_ok=True)
+        
         try:
-            if not self.hdf5_filename:
-                print("HDF5 filename not set.")
-                return
-
             if self._crashed:
-                # Rename the file
                 current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")  
                 self.hdf5_filename = os.path.join(self.data_folder, f"{current_date}_{self._subject_id}_respiratory_data_{self._num_crashes}.h5")
                 self.csv_filename = os.path.join(self.data_folder, f"{current_date}_{self._subject_id}_respiratory_data_{self._num_crashes}.csv")
 
+            print(f"Initializing Vernier HDF5 file at: {self.hdf5_filename}")
             self.hdf5_file = h5py.File(self.hdf5_filename, 'a')  
 
             if 'data' not in self.hdf5_file:  
@@ -154,14 +156,18 @@ class VernierManager:
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
                 )
+                print("✓ Created Vernier HDF5 dataset")
             else:
-                self._dataset = self.hdf5_file['data']  
+                self._dataset = self.hdf5_file['data']
+                print("✓ Using existing Vernier HDF5 dataset")
 
             self._file_opened = True
-            print("HDF5 file created for Vernier data: ", self.hdf5_filename)
+            print(f"✓ Vernier HDF5 file initialized: {self.hdf5_filename}")
 
         except Exception as e:
-            print(f"Error initializing HDF5 file: {e}")
+            error_msg = f"Error initializing Vernier HDF5 file: {e}"
+            print(f"✗ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def reset(self) -> None:
         # Immediately close the HDF5 file and convert it to CSV
@@ -269,7 +275,10 @@ class VernierManager:
             try:
                 if self._device.read():
                     tsu = tm.get_timestamp("unix")
+                    if isinstance(tsu, str):
+                        tsu = float(tsu)
                     ts = datetime.fromtimestamp(tsu).isoformat()
+                    
                     self._current_row["experiment_name"] = self._experiment_name
                     self._current_row["trial_name"] = self._trial_name
                     self._current_row["subject_id"] = self._subject_id

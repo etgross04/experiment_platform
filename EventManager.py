@@ -171,21 +171,35 @@ class EventManager:
 
     def set_filenames(self):
         if self._data_folder is None:
-            print("Data folder must be set before setting filenames.")
-            return
+            raise ValueError("Data folder must be set before setting filenames.")
+        
+        if self._subject_id is None:
+            raise ValueError("Subject ID must be set before setting filenames.")
         
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.hdf5_filename = os.path.join(self._data_folder, f"{current_date}_{self._subject_id}_event_markers.h5")
-        print(f"HDF5 filename set to: {self.hdf5_filename}")
+        print(f"✓ HDF5 filename set to: {self.hdf5_filename}")
         self.csv_filename = os.path.join(self._data_folder, f"{current_date}_{self._subject_id}_event_markers.csv")
-        print(f"CSV filename set to: {self.csv_filename}")
+        print(f"✓ CSV filename set to: {self.csv_filename}")
 
     def initialize_hdf5_file(self):
         """
         Initializes the HDF5 file and dataset if not already created.
         Called in app.py once the test and subject information are both posted from the front end.
         """
+        if self.hdf5_filename is None:
+            raise ValueError("HDF5 filename not set. Call set_filenames() first.")
+        
+        if self._subject_id is None:
+            raise ValueError("Subject ID not set. Call set_metadata() first.")
+        
+        if self._data_folder is None:
+            raise ValueError("Data folder not set. Call set_data_folder() first.")
+        
+        os.makedirs(os.path.dirname(self.hdf5_filename), exist_ok=True)
+        
         try:
+            print(f"Initializing HDF5 file at: {self.hdf5_filename}")
             self.hdf5_file = h5py.File(self.hdf5_filename, 'a')  
             if 'data' not in self.hdf5_file:  
                 dtype = np.dtype([
@@ -201,16 +215,17 @@ class EventManager:
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
                 )
+                print("✓ Created HDF5 dataset")
             else:
-                self._dataset = self.hdf5_file['data']  
-
-            if "data" in self.hdf5_file:
-                print("Dataset 'data' found in the HDF5 file.")
-            else:
-                print("Dataset 'data' not found in the HDF5 file.")
+                self._dataset = self.hdf5_file['data']
+                print("✓ Using existing HDF5 dataset")
+            
+            print(f"✓ HDF5 file initialized: {self.hdf5_filename}")
 
         except Exception as e:
-            print(f"Error initializing HDF5 file: {e}")
+            error_msg = f"Error initializing HDF5 file: {e}"
+            print(f"✗ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _stream_events(self):
         if not self.is_streaming:

@@ -1,4 +1,3 @@
-import asyncio
 from typing import Optional
 import struct
 from bleak import BleakScanner, BleakClient
@@ -9,6 +8,9 @@ import h5py
 import numpy as np
 import pandas as pd
 from collections import deque
+import asyncio
+from threading import Thread
+import time
 
 # Standard Bluetooth Heart Rate Service UUIDs
 HEART_RATE_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb"
@@ -35,6 +37,8 @@ class PolarManager:
         self._num_crashes = 0
         self._dataset = None
         self._file_opened = False
+        self.thread = None
+        self._event_loop = None
         
         # Data storage
         self._current_row = {
@@ -51,7 +55,7 @@ class PolarManager:
         }
         
         # RR interval buffer for HRV calculation (30 second window)
-        self._rr_intervals = deque(maxlen=300)  # ~30s at typical HR
+        self._rr_intervals = deque(maxlen=300)
         self._last_hr = None
         
     @property
@@ -88,11 +92,7 @@ class PolarManager:
 
     def set_metadata(self, experiment_name: str, trial_name: str, 
                  subject_id: str, experimenter_name: str = 'Unknown'):
-        """
-        Set all metadata at once - ensures atomic, consistent state.
-        Must be called before set_filenames().
-        """
-        # Validation
+        """Set all metadata at once - ensures atomic, consistent state."""
         if not all([experiment_name, trial_name, subject_id]):
             raise ValueError("experiment_name, trial_name, and subject_id are required")
         
@@ -113,12 +113,10 @@ class PolarManager:
     def set_filenames(self):
         """Set the filenames for HDF5 and CSV data files."""
         if not self.data_folder:
-            print("Data folder not set. Please set the data folder before setting filenames.")
-            return
+            raise ValueError("Data folder not set. Call set_data_folder() first.")
         
         if not self._subject_id:
-            print("Subject ID not set. Please set metadata before setting filenames.")
-            return
+            raise ValueError("Subject ID not set. Call set_metadata() first.")
         
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.hdf5_filename = os.path.join(
@@ -129,14 +127,23 @@ class PolarManager:
             self.data_folder,
             f"{current_date}_{self._subject_id}_cardiac_data_{self._num_crashes}.csv"
         )
+        print(f"✓ Polar HDF5 filename set to: {self.hdf5_filename}")
+        print(f"✓ Polar CSV filename set to: {self.csv_filename}")
 
     def initialize_hdf5_file(self):
         """Initialize the HDF5 file for data storage."""
+        if not self.hdf5_filename:
+            raise ValueError("HDF5 filename not set. Call set_filenames() first.")
+        
+        if not self._subject_id:
+            raise ValueError("Subject ID not set. Call set_metadata() first.")
+        
+        if not self.data_folder:
+            raise ValueError("Data folder not set. Call set_data_folder() first.")
+        
+        os.makedirs(os.path.dirname(self.hdf5_filename), exist_ok=True)
+        
         try:
-            if not self.hdf5_filename:
-                print("HDF5 filename not set.")
-                return
-
             if self._crashed:
                 current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")  
                 self.hdf5_filename = os.path.join(
@@ -148,6 +155,7 @@ class PolarManager:
                     f"{current_date}_{self._subject_id}_cardiac_data_{self._num_crashes}.csv"
                 )
 
+            print(f"Initializing Polar HDF5 file at: {self.hdf5_filename}")
             self.hdf5_file = h5py.File(self.hdf5_filename, 'a')  
 
             if 'data' not in self.hdf5_file:  
@@ -166,22 +174,21 @@ class PolarManager:
                 self._dataset = self.hdf5_file.create_dataset(
                     'data', shape=(0,), maxshape=(None,), dtype=dtype
                 )
+                print("✓ Created Polar HDF5 dataset")
             else:
-                self._dataset = self.hdf5_file['data']  
+                self._dataset = self.hdf5_file['data']
+                print("✓ Using existing Polar HDF5 dataset")
 
             self._file_opened = True
-            print("HDF5 file created for cardiac data:", self.hdf5_filename)
+            print(f"✓ Polar HDF5 file initialized: {self.hdf5_filename}")
 
         except Exception as e:
-            print(f"Error initializing HDF5 file: {e}")
-
-    def calculate_hrv_rmssd(self) -> Optional[float]:
-        """
-        Calculate HRV using RMSSD (Root Mean Square of Successive Differences).
+            error_msg = f"Error initializing Polar HDF5 file: {e}"
+            print(f"✗ {error_msg}")
+            raise RuntimeError(error_msg) from e
         
-        Returns:
-            HRV value in milliseconds, or None if insufficient data
-        """
+    def calculate_hrv_rmssd(self) -> Optional[float]:
+        """Calculate HRV using RMSSD."""
         if len(self._rr_intervals) < 2:
             return None
         
@@ -192,27 +199,19 @@ class PolarManager:
         return float(rmssd)
 
     def parse_heart_rate_measurement(self, sender, data: bytearray):
-        """
-        Parse heart rate measurement data from Bluetooth Heart Rate Service.
-        
-        The data format follows the Bluetooth Heart Rate Measurement specification:
-        - Byte 0: Flags
-        - Bytes 1-2: Heart Rate value
-        - Remaining bytes: RR intervals (if present)
-        """
+        """Parse heart rate measurement data from Bluetooth."""
         try:
-            # Get timestamp
             tsu = tm.get_timestamp("unix")
+            # FIX: Convert string timestamp to float
+            if isinstance(tsu, str):
+                tsu = float(tsu)
             ts = datetime.fromtimestamp(tsu).isoformat()
             
-            # Parse flags (byte 0)
             flags = data[0]
-            hr_format = flags & 0x01  # 0 = uint8, 1 = uint16
-            sensor_contact = (flags >> 1) & 0x03  # Sensor contact status
+            hr_format = flags & 0x01
             has_energy = (flags >> 3) & 0x01
-            has_rr = (flags >> 4) & 0x01  # RR intervals present
+            has_rr = (flags >> 4) & 0x01
             
-            # Parse heart rate
             if hr_format == 0:
                 hr_value = data[1]
                 offset = 2
@@ -222,23 +221,18 @@ class PolarManager:
             
             self._last_hr = hr_value
             
-            # Skip energy expended if present
             if has_energy:
                 offset += 2
             
-            # Parse RR intervals if present
             if has_rr and len(data) >= offset + 2:
                 num_rr = (len(data) - offset) // 2
                 for i in range(num_rr):
                     rr_value = struct.unpack('<H', data[offset + i*2:offset + (i+1)*2])[0]
-                    # RR intervals are in 1/1024 second resolution
                     rr_ms = (rr_value / 1024.0) * 1000.0
                     self._rr_intervals.append(rr_ms)
             
-            # Calculate HRV
             hrv_value = self.calculate_hrv_rmssd()
             
-            # Update current row
             self._current_row["experiment_name"] = self._experiment_name
             self._current_row["trial_name"] = self._trial_name
             self._current_row["subject_id"] = self._subject_id
@@ -250,101 +244,134 @@ class PolarManager:
             self._current_row["event_marker"] = self.event_marker
             self._current_row["condition"] = self.condition
             
-            # Write to HDF5
             if self._streaming:
                 self.write_to_hdf5(self._current_row)
+                hrv_display = f"{hrv_value:.1f}" if hrv_value is not None else "N/A"
+                print(f"✓ HR={self._last_hr} HRV={hrv_display}")
                 
         except Exception as e:
             print(f"Error parsing heart rate data: {e}")
+            import traceback
+            traceback.print_exc()
 
-    async def start(self) -> str:
-        """Scan for and connect to a Polar H10 device."""
+    def _scan_and_connect(self):
+        """Internal method - runs in background thread with its own event loop"""
         try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self._event_loop = loop
+            
+            # Scan for device
             print("\nSearching for Polar H10...", flush=True)
-            device = await BleakScanner.find_device_by_filter(
-                lambda bd, ad: bd.name and "Polar H10" in bd.name, 
-                timeout=10
+            device = loop.run_until_complete(
+                BleakScanner.find_device_by_filter(
+                    lambda bd, ad: bd.name and "Polar H10" in bd.name,
+                    timeout=10
+                )
             )
             
             if device is None:
                 print("No Polar H10 device found.")
                 self._device_started = False
-                return "Error: No Polar H10 device found"
+                return
             
             self._device_address = device.address
             print(f"Found Polar device: {device.name} at {device.address}")
             self._device_started = True
-            return "Polar device found and ready to connect."
+            
+            # Connect and stream
+            print(f"Connecting to Polar H10 at {self._device_address}")
+            
+            loop.run_until_complete(self._stream_data())
             
         except Exception as e:
-            print(f"Error starting Polar device: {e}")
-            self._device_started = False
-            return f"Error: {e}"
-
-    async def run(self, duration_seconds=60):
-        """Start data collection from the Polar device."""
-        if not self._device_started:
-            print("Device has not been started yet. Call start() first.")
-            return
-        
-        try:
-            self._running = True
-            self._streaming = True
+            print(f"Error in Polar connection: {e}")
+            self._crashed = True
+            self._num_crashes += 1
             
+        finally:
+            if self._event_loop and not self._event_loop.is_closed():
+                self._event_loop.close()
+            self._streaming = False
+            self._running = False
+
+    async def _stream_data(self):
+        """Internal async method for streaming"""
+        try:
             async with BleakClient(self._device_address) as client:
                 self._client = client
+                self._streaming = True
                 
-                print(f"Connected to Polar H10 at {self._device_address}")
+                print(f"Connected to Polar H10 - streaming data...")
                 
                 await client.start_notify(
                     HEART_RATE_MEASUREMENT_UUID,
                     self.parse_heart_rate_measurement
                 )
                 
-                print(f"Data streaming started. Collecting for {duration_seconds} seconds...")
+                # Stream while running flag is True
+                while self._running:
+                    await asyncio.sleep(0.1)
                 
-                await asyncio.sleep(duration_seconds)
                 await client.stop_notify(HEART_RATE_MEASUREMENT_UUID)
-                
                 print("Data collection complete.")
                 
         except Exception as e:
             print(f"Error during data collection: {e}")
-            print("DEVICE HAS CRASHED - RESTART POLAR MANAGER.")
-            self._crashed = True
-            self._num_crashes += 1
-            self.reset()
+            raise
+
+    def start(self) -> str:
+        """Start the Polar manager - SYNCHRONOUS like Vernier"""
+        try:
+            if self.thread is not None and self.thread.is_alive():
+                print("Stopping existing thread...")
+                self._running = False
+                self.thread.join()
+                print("Thread stopped.")
             
-        finally:
-            self._streaming = False
-            self._running = False
-            self._client = None
+            self._running = True
+            self.thread = Thread(target=self._scan_and_connect, daemon=True)
+            self.thread.start()
+            
+            # Wait a bit for device discovery
+            time.sleep(2)
+            
+            if self._device_started:
+                print("Polar manager running...")
+                return "Polar device started."
+            else:
+                return "Searching for Polar H10..."
+                
+        except Exception as e:
+            print(f"Error starting Polar device: {e}")
+            self._device_started = False
+            return f"Error: {e}"
 
     def stop(self) -> str:
-        """Stop data collection and close connections."""
+        """Stop data collection - SYNCHRONOUS"""
         try:
             self._running = False
             self._streaming = False
             print("Stopping Polar manager...")
             
-            if self._device_started:
-                if self._file_opened:
-                    print("Stop is closing HDF5 file...")
-                    self.close_h5_file()
+            if self.thread is not None and self.thread.is_alive():
+                self.thread.join(timeout=5)
+                print("Thread stopped.")
+            
+            if self._file_opened:
+                print("Stop is closing HDF5 file...")
+                self.close_h5_file()
 
-                self._device_started = False
-                print("Polar manager stopped.")
-                return "Polar manager stopped."
-            else:
-                print("Device has not started.")
-                return "Device has not started."
+            self._device_started = False
+            print("Polar manager stopped.")
+            return "Polar manager stopped."
                 
         except Exception as e:
             print(f"An error occurred: {e}")
             return f"An error occurred: {e}"
 
     def reset(self) -> None:
-        """Reset the manager state and close all resources."""
+        """Reset the manager state."""
         try:
             print("Reset is closing HDF5 file...")
             self.close_h5_file()
@@ -358,11 +385,11 @@ class PolarManager:
         except Exception as e:
             print(f"Error closing HDF5 file: {e}")
 
-        # Reset all variables
         self._device_started = False
         self._device_address = None
         self._client = None
         self._dataset = None
+        self._event_loop = None
         self._current_row = {
             "experiment_name": None,
             "trial_name": None,
@@ -391,7 +418,7 @@ class PolarManager:
             print(f"Error resizing dataset: {e}")
 
     def write_to_hdf5(self, row: dict) -> None:
-        """Write the incoming dictionary to the HDF5 dataset as a single row."""
+        """Write data to HDF5."""
         try:
             if self.hdf5_file is None or self._dataset is None:
                 print("HDF5 file or dataset is not initialized.")
@@ -426,7 +453,7 @@ class PolarManager:
             print("HDF5 file is already closed or isn't initialized.")
         
     def hdf5_to_csv(self):
-        """Convert the HDF5 file to a CSV file."""
+        """Convert HDF5 to CSV."""
         try:
             chunk_size = 1000
             with h5py.File(self.hdf5_filename, 'r') as h5_file:
@@ -463,4 +490,3 @@ class PolarManager:
             print(f"Error: The HDF5 file '{self.hdf5_filename}' was not found.")
         except Exception as e:
             print(f"Error converting HDF5 to CSV: {e}")
-

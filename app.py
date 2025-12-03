@@ -169,6 +169,30 @@ def launch_emotibit_parser():
             "error": str(e)
         }), 500
 
+@app.route('/api/manager-status', methods=['GET'])
+def get_manager_status():
+    """Get the running status of all managers"""
+    global event_manager, vernier_manager, polar_manager
+    
+    try:
+        status = {
+            'event_manager': event_manager.is_streaming if event_manager else False,
+            'vernier_manager': vernier_manager._running if vernier_manager else False,
+            'polar_manager': polar_manager._running if polar_manager else False
+        }
+        
+        return jsonify({
+            'success': True,
+            'status': status,
+            'any_running': any(status.values())
+        })
+    except Exception as e:
+        print(f"Error checking manager status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+    
 @app.route('/api/convert-hdf5-to-csv', methods=['POST'])
 def convert_hdf5_to_csv():
     global event_manager, vernier_manager, polar_manager
@@ -314,9 +338,15 @@ def upload_survey():
 @app.route('/set_event_marker', methods=['POST'])
 def set_event_marker():
     """Set event marker for the event manager"""
-    global event_manager
+    global event_manager, vernier_manager, polar_manager
     data = request.get_json()
     event_marker = data.get('event_marker')
+
+    if vernier_manager is not None:
+        vernier_manager.event_marker = event_marker
+    if polar_manager is not None:
+        polar_manager.event_marker = event_marker
+
     try:
         event_manager.event_marker = event_marker
         print("Event marker set to: ", event_marker)
@@ -1687,11 +1717,14 @@ def start_polar_manager():
         if not polar_manager._file_opened:
             polar_manager.initialize_hdf5_file()
         
-        return jsonify({'success': True, 'message': 'Polar manager ready. Use async start() to connect to device.'})
+        # NOW START THE DEVICE
+        result = polar_manager.start()
+        
+        return jsonify({'success': True, 'message': result})
     
     except Exception as e:
         print(f"Error starting polar manager: {e}")
-        return jsonify({'error': 'Failed to start polar manager'}), 500
+        return jsonify({'error': f'Failed to start polar manager: {str(e)}'}), 500
 
 @app.route('/stop_polar_manager', methods=['POST'])
 def stop_polar_manager():

@@ -8,6 +8,7 @@ import SurveyComponent from './procedures/SurveyComponent';
 import SERBaselineComponent from './procedures/SERBaselineComponent';
 import BreakComponent from './procedures/BreakComponent';
 import DemographicsSurveyComponent from './procedures/DemographicsSurveyComponent';
+import BiometricBaselineComponent from './procedures/BiometricBaselineComponent';
 
 function AudioTestComponent({ sessionId, onComplete }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -491,6 +492,9 @@ function SubjectInterface() {
         return BreakComponent;
       case 'demographics':  
         return DemographicsSurveyComponent;
+         case 'baseline-recording':
+      case 'biometric-baseline':
+        return BiometricBaselineComponent;
       default:
         switch (name) {
           case 'consent form':
@@ -514,6 +518,10 @@ function SubjectInterface() {
           case 'demographics survey':  
           case 'demographics':
             return DemographicsSurveyComponent;
+            case 'biometric baseline recording':
+          case 'baseline recording':
+          case 'biometric baseline':
+            return BiometricBaselineComponent;
 
           default:
             return null;
