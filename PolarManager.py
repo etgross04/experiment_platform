@@ -333,14 +333,19 @@ class PolarManager:
             self.thread = Thread(target=self._scan_and_connect, daemon=True)
             self.thread.start()
             
-            # Wait a bit for device discovery
-            time.sleep(2)
+            # Wait for device discovery (increased timeout)
+            max_wait = 5
+            for i in range(max_wait):
+                time.sleep(1)
+                if self._device_started:
+                    break
             
             if self._device_started:
                 print("Polar manager running...")
                 return "Polar device started."
             else:
-                return "Searching for Polar H10..."
+                print("No Polar H10 device found after scanning.")
+                return "No Polar H10 device found. Please check that the device is powered on and within range."
                 
         except Exception as e:
             print(f"Error starting Polar device: {e}")

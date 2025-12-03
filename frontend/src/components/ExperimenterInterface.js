@@ -1099,7 +1099,7 @@ function ExperimenterInterface() {
     
     return allProcedureIndices.every(index => completedProcedures.includes(index));
   }, [experimentData, completedProcedures]);
-  
+
   useEffect(() => {
     if (isExperimentComplete()) {
       checkManagerStatus();
@@ -1537,14 +1537,38 @@ useEffect(() => {
   const toggleVernier = async () => {
     setVernierLoading(true);
     const newState = !vernierRunning;
+    const endpoint = newState ? 'start_vernier_manager' : 'stop_vernier_manager';
     
     try {
-      // Add your vernier toggle logic here when implemented
-      setVernierRunning(newState);
-      console.log(`Vernier stream ${newState ? 'started' : 'stopped'}`);
+      const response = await fetch(`/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+
+      const data = await response.json();
+
+      // Check for warnings (device not found but can continue)
+      if (data.warning) {
+        alert(`WARNING: ${data.message}\n\nYou can continue the experiment, but respiratory data will not be collected.\n\nPlease check your hardware connection and try again if needed.`);
+        // Don't set running state if device wasn't found
+        setVernierRunning(false);
+      } else if (data.success) {
+        // Device successfully started/stopped
+        setVernierRunning(newState);
+        console.log(`Vernier stream ${newState ? 'started' : 'stopped'}`);
+        console.log('Server response:', data.message || data);
+      } else {
+        // Critical error
+        throw new Error(data.error || 'Unknown error occurred');
+      }
+      
     } catch (error) {
-      console.error(`Error toggling Vernier:`, error);
-      alert(`Failed to toggle Vernier stream. Please try again.`);
+      console.error(`Error ${newState ? 'starting' : 'stopping'} Vernier manager:`, error);
+      alert(`ERROR: Failed to ${newState ? 'start' : 'stop'} Vernier manager.\n\nError: ${error.message}\n\nPlease try again.`);
+      setVernierRunning(false);
     } finally {
       setVernierLoading(false);
     }
@@ -1564,19 +1588,27 @@ useEffect(() => {
         body: JSON.stringify({})
       });
 
-      if (!response.ok) {
-        throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
-      }
-
       const data = await response.json();
-      
-      setPolarRunning(newState);
-      console.log(`Polar HR ${newState ? 'started' : 'stopped'}`);
-      console.log('Server response:', data.message || data);
+
+      // Check for warnings (device not found but can continue)
+      if (data.warning) {
+        alert(`WARNING: ${data.message}\n\nYou can continue the experiment, but heart rate data will not be collected.\n\nPlease check that:\n• The Polar H10 is powered on\n• The device is within Bluetooth range\n• The device is not connected to another device\n\nThen try again if needed.`);
+        // Don't set running state if device wasn't found
+        setPolarRunning(false);
+      } else if (data.success) {
+        // Device successfully started/stopped
+        setPolarRunning(newState);
+        console.log(`Polar HR ${newState ? 'started' : 'stopped'}`);
+        console.log('Server response:', data.message || data);
+      } else {
+        // Critical error
+        throw new Error(data.error || 'Unknown error occurred');
+      }
       
     } catch (error) {
       console.error(`Error ${newState ? 'starting' : 'stopping'} Polar HR manager:`, error);
-      alert(`Failed to ${newState ? 'start' : 'stop'} Polar HR manager. Please try again.`);
+      alert(`ERROR: Failed to ${newState ? 'start' : 'stop'} Polar HR manager.\n\nError: ${error.message}\n\nPlease try again.`);
+      setPolarRunning(false);
     } finally {
       setPolarLoading(false);
     }

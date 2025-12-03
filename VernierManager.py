@@ -256,15 +256,18 @@ class VernierManager:
                 print("Connected to " + self._device.name)
                 self._sensors = self._device.get_enabled_sensors()
                 self._device_started = True
+                return "Vernier device started."
+            else:
+                print("No Vernier device found or failed to open.")
+                self._device_started = False
+                return "No Vernier device found. Please check your hardware connection."
 
         except Exception as e:
             print(f"Error starting GoDirect device: {e}")
             self._device = None
             self._sensors = None
             self._device_started = False
-            return "Error"
-
-        return "Vernier device started."
+            return f"Error connecting to Vernier device: {str(e)}"
     
     def collect_data(self):
         if not self.running:
@@ -278,7 +281,7 @@ class VernierManager:
                     if isinstance(tsu, str):
                         tsu = float(tsu)
                     ts = datetime.fromtimestamp(tsu).isoformat()
-                    
+
                     self._current_row["experiment_name"] = self._experiment_name
                     self._current_row["trial_name"] = self._trial_name
                     self._current_row["subject_id"] = self._subject_id

@@ -1709,22 +1709,32 @@ def start_polar_manager():
     global polar_manager
     try:
         if polar_manager is None:
-            return jsonify({'error': 'Polar manager not initialized'}), 400
+            return jsonify({'success': False, 'error': 'Polar manager not initialized'}), 400
             
         if polar_manager.data_folder is None:
-            return jsonify({'error': 'Data folder not set for polar manager'}), 400
+            return jsonify({'success': False, 'error': 'Data folder not set for polar manager'}), 400
         
         if not polar_manager._file_opened:
             polar_manager.initialize_hdf5_file()
         
-        # NOW START THE DEVICE
         result = polar_manager.start()
         
-        return jsonify({'success': True, 'message': result})
+        # Check if device was successfully started
+        if polar_manager._device_started:
+            return jsonify({'success': True, 'message': result})
+        else:
+            return jsonify({
+                'success': False, 
+                'warning': result,
+                'message': 'Polar device not connected.'
+            }), 200
     
     except Exception as e:
         print(f"Error starting polar manager: {e}")
-        return jsonify({'error': f'Failed to start polar manager: {str(e)}'}), 500
+        return jsonify({
+            'success': False, 
+            'error': f'Failed to start polar manager: {str(e)}'
+        }), 500
 
 @app.route('/stop_polar_manager', methods=['POST'])
 def stop_polar_manager():
@@ -1740,7 +1750,56 @@ def stop_polar_manager():
     except Exception as e:
         print(f"Error stopping polar manager: {e}")
         return jsonify({'error': 'Failed to stop polar manager'}), 500
+
+@app.route('/start_vernier_manager', methods=['POST'])
+def start_vernier_manager():
+    """Start the vernier manager"""
+    global vernier_manager
+    try:
+        if vernier_manager is None:
+            return jsonify({'success': False, 'error': 'Vernier manager not initialized'}), 400
+            
+        if vernier_manager.data_folder is None:
+            return jsonify({'success': False, 'error': 'Data folder not set for vernier manager'}), 400
+        
+        if not vernier_manager._file_opened:
+            vernier_manager.initialize_hdf5_file()
+        
+        result = vernier_manager.start()
+        
+        # Check if device was successfully started
+        if vernier_manager._device_started:
+            vernier_manager.run()  # Start the data collection thread
+            return jsonify({'success': True, 'message': result})
+        else:
+            return jsonify({
+                'success': False, 
+                'warning': result,
+                'message': 'Vernier device not connected. You may continue the experiment, but respiratory data will not be collected.'
+            }), 200
     
+    except Exception as e:
+        print(f"Error starting vernier manager: {e}")
+        return jsonify({
+            'success': False, 
+            'error': f'Failed to start vernier manager: {str(e)}'
+        }), 500
+
+@app.route('/stop_vernier_manager', methods=['POST'])
+def stop_vernier_manager():
+    """Stop the vernier manager"""
+    global vernier_manager
+    try:
+        if vernier_manager is None:
+            return jsonify({'success': False, 'error': 'Vernier manager not initialized'}), 400
+        
+        result = vernier_manager.stop()
+        return jsonify({'success': True, 'message': result})
+    
+    except Exception as e:
+        print(f"Error stopping vernier manager: {e}")
+        return jsonify({'success': False, 'error': f'Failed to stop vernier manager: {str(e)}'}), 500
+
 @app.route('/set_condition', methods=['POST'])
 def set_condition():
     """Set a condition for the event manager"""
