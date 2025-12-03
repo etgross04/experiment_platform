@@ -465,7 +465,6 @@ function PreTestInstructionsWizard({
                   }`}
                   onClick={() => setCurrentStep(index)}
                 >
-                  <span className="breadcrumb-number">{index + 1}</span>
                   <span className="breadcrumb-title">{step.title}</span>
                 </div>
               ))}
@@ -473,7 +472,6 @@ function PreTestInstructionsWizard({
                 className={`breadcrumb ${isSettingsStep ? 'active' : ''}`}
                 onClick={() => setCurrentStep(steps.length)}
               >
-                <span className="breadcrumb-number">{steps.length + 1}</span>
                 <span className="breadcrumb-title">Settings</span>
               </div>
             </div>
