@@ -874,13 +874,20 @@ function SettingsPanel({
             </div>
             <div className="metric-control-group">
               <h5>Data Processing</h5>
-              <p style={{ fontSize: '0.8rem', color: '#666', margin: '0 0 10px 0' }}>
+              <p className="control-group-description">
                 Convert HDF5 data files to CSV format and push to database.
               </p>
+              
+              {(emotiBitRunning || vernierRunning || polarRunning) && (
+                <div className="manager-warning settings-warning">
+                  ⚠️ Stop all managers before converting files
+                </div>
+              )}
               
               <button
                 onClick={convertDataToCsv}
                 className="complete-experiment-btn"
+                disabled={emotiBitRunning || vernierRunning || polarRunning}
               >
                 Convert Data to CSV
               </button>
@@ -888,8 +895,9 @@ function SettingsPanel({
               <button
                 onClick={pushDataToDatabase}
                 className="complete-experiment-btn"
+                disabled={emotiBitRunning || vernierRunning || polarRunning}
               >
-              Push Data to Database
+                Push Data to Database
               </button>
             </div>
           </div>
@@ -1010,9 +1018,50 @@ function ExperimenterInterface() {
   const [uploadEmotibitStatus, setUploadEmotibitStatus] = useState('');
   const [emotibitFilePath, setEmotibitFilePath] = useState('');
 
+  const [managerStatus, setManagerStatus] = useState({
+    event_manager: false,
+    vernier_manager: false,
+    polar_manager: false
+  });
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
+  const checkManagerStatus = async () => {
+    try {
+      setCheckingStatus(true);
+      const response = await fetch('/api/manager-status');
+      const data = await response.json();
+      
+      if (data.success) {
+        setManagerStatus(data.status);
+        // Update local state to match server state
+        setEmotiBitRunning(data.status.event_manager);
+        setVernierRunning(data.status.vernier_manager);
+        setPolarRunning(data.status.polar_manager);
+      }
+    } catch (error) {
+      console.error('Error checking manager status:', error);
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isExperimentComplete()) {
+      checkManagerStatus();
+    }
+  }, [completedProcedures]);
+
   const convertDataToCsv = async () => {
     if (!currentSession) {
       alert('No active session found');
+      return;
+    }
+
+    // Check manager status first
+    await checkManagerStatus();
+    
+    if (emotiBitRunning || vernierRunning || polarRunning) {
+      alert('⚠️ Warning: Data managers are still running.\n\nPlease stop all managers (Event Manager, Vernier Manager, Polar Manager) before converting HDF5 files to prevent data corruption or incomplete files.');
       return;
     }
 
@@ -1047,6 +1096,13 @@ function ExperimenterInterface() {
   const pushDataToDatabase = async () => {
     if (!currentSession) {
       alert('No active session found');
+      return;
+    }
+
+    await checkManagerStatus();
+  
+    if (emotiBitRunning || vernierRunning || polarRunning) {
+      alert('⚠️ Warning: Data managers are still running.\n\nPlease stop all managers before pushing to database to ensure all data is properly saved.');
       return;
     }
 
@@ -2106,68 +2162,121 @@ useEffect(() => {
           <p>No procedures loaded</p>
         )}
         {isExperimentComplete() && (
-        <div className="experiment-completion-section">
-          <div className="complete-message">
-            <h4>Experiment Complete!</h4>
-            <p>All procedures have been completed successfully.</p>
-            
-            <p>If it is available, please upload Biometric Ground Truth data before completing the experiment and resetting.</p>
-            <ul>
-              <li>Copy or move the EmotiBit CSV from the EmotiBit SD card to the desktop or somewhere you can find it</li>
-              <li>Click "Import EmotiBit File" below and browse to that location</li>
-              <li>More than one file may be selected.</li>
-            </ul>
-            
-            <button
-              onClick={openEmotibitFilePicker}
-              className="complete-experiment-btn"
-            > 
-              Import EmotiBit File 
-            </button><br />
-            
-            {uploadEmotibitStatus && (
-              <div className="emotibit-upload-status" style={{ margin: '10px 0' }}>
-                {uploadEmotibitStatus}
-              </div>
-            )}
+  <div className="experiment-completion-section">
+    <div className="complete-message">
+      <h4>Experiment Complete!</h4>
+      <p>All procedures have been completed successfully.</p>
+      
+      <h5 style={{ marginTop: '20px' }}>Stop Data Collection</h5>
+      <p style={{ fontSize: '0.9em' }}>Please stop all active data managers before converting files:</p>
+      
+      {(emotiBitRunning || vernierRunning || polarRunning) && (
+        <p style={{ color: '#dc3545', fontWeight: '500' }}>⚠️ Warning: Data managers are still running. Stop all managers before converting files.</p>
+      )}
+      
+      {availableMetrics.includes('biometrics') && (
+        <button 
+          onClick={async () => {
+            await toggleEmotiBit();
+            await checkManagerStatus();
+          }}
+          className="complete-experiment-btn"
+          style={{ backgroundColor: '#dc3545' }}
+          disabled={!emotiBitRunning}
+        >
+          {emotiBitRunning ? '⏹️ Stop Event Manager' : '✓ Event Manager Stopped'}
+        </button>
+      )}
+      
+      {availableMetrics.includes('respiratory') && (
+        <button 
+          onClick={async () => {
+            await toggleVernier();
+            await checkManagerStatus();
+          }}
+          className="complete-experiment-btn"
+          style={{ backgroundColor: '#dc3545' }}
+          disabled={!vernierRunning}
+        >
+          {vernierRunning ? '⏹️ Stop Vernier Manager' : '✓ Vernier Manager Stopped'}
+        </button>
+      )}
+      
+      {availableMetrics.includes('polar_hr') && (
+        <button 
+          onClick={async () => {
+            await togglePolar();
+            await checkManagerStatus();
+          }}
+          className="complete-experiment-btn"
+          style={{ backgroundColor: '#dc3545' }}
+          disabled={!polarRunning}
+        >
+          {polarRunning ? '⏹️ Stop Polar Manager' : '✓ Polar Manager Stopped'}
+        </button>
+      )}
 
-            {emotibitFilePath && (
-              <div className="emotibit-file-path" style={{ margin: '10px 0', fontSize: '0.9em' }}>
-                {emotibitFilePath}
-              </div>
-            )}
-
-            <h5 style={{ marginTop: '20px' }}>Data Processing</h5>
-            <p style={{ fontSize: '0.9em' }}>Convert HDF5 files to CSV and push to database:</p>
-            
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button 
-                onClick={convertDataToCsv}
-                className="complete-experiment-btn"
-                style={{ backgroundColor: '#6f42c1' }}
-              >
-                Convert Data to CSV
-              </button>
-              
-              <button 
-                onClick={pushDataToDatabase}
-                className="complete-experiment-btn"
-                style={{ backgroundColor: '#6f42c1' }}
-              >
-                Push Data to Database
-              </button>
-            </div>
-
-            <button 
-              onClick={handleCompleteExperiment}
-              className="complete-experiment-btn"
-              style={{ marginTop: '20px' }}
-            >
-              ✅ Complete Experiment & Reset 
-            </button>
-          </div>
+      <p>If it is available, please upload Biometric Ground Truth data before completing the experiment and resetting.</p>
+      <ul>
+        <li>Copy or move the EmotiBit CSV from the EmotiBit SD card to the desktop or somewhere you can find it</li>
+        <li>Click "Import EmotiBit File" below and browse to that location</li>
+        <li>More than one file may be selected.</li>
+      </ul>
+      
+      <button
+        onClick={openEmotibitFilePicker}
+        className="complete-experiment-btn"
+      > 
+        Import EmotiBit File 
+      </button><br />
+      
+      {uploadEmotibitStatus && (
+        <div className="emotibit-upload-status" style={{ margin: '10px 0' }}>
+          {uploadEmotibitStatus}
         </div>
       )}
+
+      {emotibitFilePath && (
+        <div className="emotibit-file-path" style={{ margin: '10px 0', fontSize: '0.9em' }}>
+          {emotibitFilePath}
+        </div>
+      )}
+
+      <h5 style={{ marginTop: '20px' }}>Data Processing</h5>
+      <p style={{ fontSize: '0.9em' }}>Convert HDF5 files to CSV and push to database:</p>
+      
+      {(emotiBitRunning || vernierRunning || polarRunning) && (
+        <p style={{ color: '#dc3545', fontSize: '0.9em' }}>⚠️ Convert buttons are disabled while managers are running</p>
+      )}
+      
+      <button 
+        onClick={convertDataToCsv}
+        className="complete-experiment-btn"
+        style={{ backgroundColor: '#6f42c1' }}
+        disabled={emotiBitRunning || vernierRunning || polarRunning || checkingStatus}
+      >
+        Convert Data to CSV
+      </button>
+      
+      <button 
+        onClick={pushDataToDatabase}
+        className="complete-experiment-btn"
+        style={{ backgroundColor: '#6f42c1' }}
+        disabled={emotiBitRunning || vernierRunning || polarRunning || checkingStatus}
+      >
+        Push Data to Database
+      </button>
+
+      <button 
+        onClick={handleCompleteExperiment}
+        className="complete-experiment-btn"
+        style={{ marginTop: '20px' }}
+      >
+        ✅ Complete Experiment & Reset 
+      </button>
+    </div>
+  </div>
+)}
         </div>
         <ToolPanel 
           isOpen={isToolPanelOpen} 
