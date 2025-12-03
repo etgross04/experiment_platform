@@ -6,7 +6,7 @@ function ExperimentRunner({ onBack }) {
   const [selectedExperiment, setSelectedExperiment] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [runStatus, setRunStatus] = useState('');
-
+  
   useEffect(() => {
     loadExperiments();
   }, []);
@@ -65,9 +65,9 @@ function ExperimentRunner({ onBack }) {
         );
         
         if (experimenterWindow) {
-          setRunStatus(`✅ Experimenter interface launched! Session: ${sessionId}`);
+          setRunStatus(`Experimenter interface launched! Session: ${sessionId}`);
         } else {
-          setRunStatus(`⚠️ Please manually open: ${experimenterUrl}`);
+          setRunStatus(`Please manually open: ${experimenterUrl}`);
         }
         
       } else {
@@ -132,7 +132,7 @@ function ExperimentRunner({ onBack }) {
                   onClick={runExperiment}
                   disabled={isRunning}
                 >
-                  {isRunning ? 'Starting...' : '▶️ Launch Experiment'}
+                  {isRunning ? 'Starting...' : 'Launch Experiment'}
                 </button>
                 
                 {runStatus && (

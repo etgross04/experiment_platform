@@ -404,11 +404,13 @@
 .start-btn {
   background-color: #28a745;
   color: white;
+  width: 100%;
 }
 
 .stop-btn {
   background-color: #dc3545;
   color: white;
+  width: 100%;
 }
 
 .audio-controls {
@@ -1686,6 +1688,7 @@
   transition: all 0.3s ease;
   margin-top: 20px;
   box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+  width: 100%;
 }
 
 .complete-experiment-btn:hover {

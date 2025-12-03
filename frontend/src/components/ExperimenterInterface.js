@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './ExperimenterInterface.css';
 import { setDevice, fetchAudioDevices, setEventMarker } from './utils/helpers';
 import PRSComponent from './procedures/PRSComponent';
@@ -17,6 +17,9 @@ function PreTestInstructionsWizard({
   emotiBitRunning,
   vernierRunning,
   polarRunning,
+  emotiBitLoading,
+  vernierLoading,
+  polarLoading,
   selectedMicrophone,
   audioDevices,
   isLoadingDevices,
@@ -295,9 +298,14 @@ function PreTestInstructionsWizard({
               <button 
                 onClick={toggleEmotiBit}
                 className={emotiBitRunning ? 'stop-btn' : 'start-btn'}
-                disabled={!allowEventMarkers}
+                disabled={!allowEventMarkers || emotiBitLoading}
               >
-                {emotiBitRunning ? '⏹️ Stop Event Markers' : '▶️ Start Event Markers'}
+                {emotiBitLoading 
+                  ? 'Processing...' 
+                  : emotiBitRunning 
+                    ? 'Stop Event Markers' 
+                    : 'Start Event Markers'
+                }
               </button>
               {!allowEventMarkers && (
                 <small style={{ color: '#999', display: 'block', marginTop: '4px' }}>
@@ -312,9 +320,14 @@ function PreTestInstructionsWizard({
               <button 
                 onClick={toggleVernier}
                 className={vernierRunning ? 'stop-btn' : 'start-btn'}
-                disabled={!allowEventMarkers}
+                disabled={!allowEventMarkers || vernierLoading}
               >
-                {vernierRunning ? '⏹️ Stop Vernier Stream' : '▶️ Start Vernier Stream'}
+                {vernierLoading 
+                  ? 'Processing...' 
+                  : vernierRunning 
+                    ? 'Stop Vernier Stream' 
+                    : 'Start Vernier Stream'
+                }
               </button>
               {!allowEventMarkers && (
                 <small style={{ color: '#999', display: 'block', marginTop: '4px' }}>
@@ -330,9 +343,14 @@ function PreTestInstructionsWizard({
               <button 
                 onClick={togglePolar}
                 className={polarRunning ? 'stop-btn' : 'start-btn'}
-                disabled={!allowEventMarkers}
+                disabled={!allowEventMarkers || polarLoading}
               >
-                {polarRunning ? '⏹️ Stop Polar HR Stream' : '▶️ Start Polar HR Stream'}
+                {polarLoading 
+                  ? 'Processing...' 
+                  : polarRunning 
+                    ? 'Stop Polar HR Stream' 
+                    : 'Start Polar HR Stream'
+                }
               </button>
               {!allowEventMarkers && (
                 <small style={{ color: '#999', display: 'block', marginTop: '4px' }}>
@@ -685,6 +703,9 @@ function SettingsPanel({
   emotiBitRunning,
   vernierRunning,
   polarRunning,
+  emotiBitLoading,
+  vernierLoading,
+  polarLoading,
   selectedMicrophone,
   audioDevices,
   isLoadingDevices,
@@ -753,9 +774,14 @@ function SettingsPanel({
                 <button 
                   onClick={toggleEmotiBit}
                   className={emotiBitRunning ? 'stop-btn' : 'start-btn'}
-                  disabled={!allowEventMarkers}
+                  disabled={!allowEventMarkers || emotiBitLoading}
                 >
-                  {emotiBitRunning ? '⏹️ Stop Event Markers' : '▶️ Start Event Markers'}
+                  {emotiBitLoading 
+                    ? 'Processing...' 
+                    : emotiBitRunning 
+                      ? 'Stop Event Markers' 
+                      : 'Start Event Markers'
+                  }
                 </button>
               </div>
             )}
@@ -796,8 +822,14 @@ function SettingsPanel({
                 <button 
                   onClick={toggleVernier}
                   className={vernierRunning ? 'stop-btn' : 'start-btn'}
+                  disabled={vernierLoading}
                 >
-                  {vernierRunning ? '⏹️ Stop Vernier Stream' : '▶️ Start Vernier Stream'}
+                  {vernierLoading 
+                    ? 'Processing...' 
+                    : vernierRunning 
+                      ? 'Stop Vernier Stream' 
+                      : 'Start Vernier Stream'
+                  }
                 </button>
               </div>
             )}
@@ -808,9 +840,14 @@ function SettingsPanel({
               <button 
                 onClick={togglePolar}
                 className={polarRunning ? 'stop-btn' : 'start-btn'}
-                disabled={!allowEventMarkers}
+                disabled={!allowEventMarkers || polarLoading}
               >
-                {polarRunning ? '⏹️ Stop Polar HR Stream' : '▶️ Start Polar HR Stream'}
+                {polarLoading 
+                  ? 'Processing...' 
+                  : polarRunning 
+                    ? 'Stop Polar HR Stream' 
+                    : 'Start Polar HR Stream'
+                }
               </button>
               {!allowEventMarkers && (
                 <small style={{ color: '#999', display: 'block', marginTop: '4px' }}>
@@ -996,7 +1033,10 @@ function ExperimenterInterface() {
   const [participantRegistered, setParticipantRegistered] = useState(false);
   const [showSetupForm, setShowSetupForm] = useState(true);
   const [isToolPanelOpen, setIsToolPanelOpen] = useState(false);
-
+  const [emotiBitLoading, setEmotiBitLoading] = useState(false);
+  const [vernierLoading, setVernierLoading] = useState(false);
+  const [polarLoading, setPolarLoading] = useState(false);
+  
   const [setupData, setSetupData] = useState({
     experimentName: '',
     trialName: '',
@@ -1018,11 +1058,11 @@ function ExperimenterInterface() {
   const [uploadEmotibitStatus, setUploadEmotibitStatus] = useState('');
   const [emotibitFilePath, setEmotibitFilePath] = useState('');
 
-  const [managerStatus, setManagerStatus] = useState({
-    event_manager: false,
-    vernier_manager: false,
-    polar_manager: false
-  });
+  // const [managerStatus, setManagerStatus] = useState({
+  //   event_manager: false,
+  //   vernier_manager: false,
+  //   polar_manager: false
+  // });
   const [checkingStatus, setCheckingStatus] = useState(false);
 
   const checkManagerStatus = async () => {
@@ -1032,7 +1072,6 @@ function ExperimenterInterface() {
       const data = await response.json();
       
       if (data.success) {
-        setManagerStatus(data.status);
         // Update local state to match server state
         setEmotiBitRunning(data.status.event_manager);
         setVernierRunning(data.status.vernier_manager);
@@ -1045,11 +1084,27 @@ function ExperimenterInterface() {
     }
   };
 
+  const isExperimentComplete = useCallback(() => {
+    if (!experimentData || !experimentData.procedures) return false;
+    
+    const filteredProcedures = experimentData.procedures.filter(
+      procedure => procedure.id !== 'consent' && 
+                  procedure.id !== 'data-collection' && 
+                  !procedure.name?.toLowerCase().includes('consent')
+    );
+    
+    const allProcedureIndices = filteredProcedures.map(proc => 
+      experimentData.procedures.findIndex(p => p === proc)
+    );
+    
+    return allProcedureIndices.every(index => completedProcedures.includes(index));
+  }, [experimentData, completedProcedures]);
+  
   useEffect(() => {
     if (isExperimentComplete()) {
       checkManagerStatus();
     }
-  }, [completedProcedures]);
+  }, [completedProcedures, isExperimentComplete]);
 
   const convertDataToCsv = async () => {
     if (!currentSession) {
@@ -1448,6 +1503,7 @@ useEffect(() => {
   };
 
   const toggleEmotiBit = async () => {
+    setEmotiBitLoading(true);
     const newState = !emotiBitRunning;
     const endpoint = newState ? 'start_event_manager' : 'stop_event_manager';
     
@@ -1473,15 +1529,29 @@ useEffect(() => {
     } catch (error) {
       console.error(`Error ${newState ? 'starting' : 'stopping'} EmotiBit event manager:`, error);
       alert(`Failed to ${newState ? 'start' : 'stop'} EmotiBit event manager. Please try again.`);
+    } finally {
+      setEmotiBitLoading(false);
     }
   };
 
-  const toggleVernier = () => {
-    setVernierRunning(!vernierRunning);
-    console.log(`Vernier stream ${!vernierRunning ? 'started' : 'stopped'}`);
+  const toggleVernier = async () => {
+    setVernierLoading(true);
+    const newState = !vernierRunning;
+    
+    try {
+      // Add your vernier toggle logic here when implemented
+      setVernierRunning(newState);
+      console.log(`Vernier stream ${newState ? 'started' : 'stopped'}`);
+    } catch (error) {
+      console.error(`Error toggling Vernier:`, error);
+      alert(`Failed to toggle Vernier stream. Please try again.`);
+    } finally {
+      setVernierLoading(false);
+    }
   };
 
   const togglePolar = async () => {
+    setPolarLoading(true);
     const newState = !polarRunning;
     const endpoint = newState ? 'start_polar_manager' : 'stop_polar_manager';
     
@@ -1507,6 +1577,8 @@ useEffect(() => {
     } catch (error) {
       console.error(`Error ${newState ? 'starting' : 'stopping'} Polar HR manager:`, error);
       alert(`Failed to ${newState ? 'start' : 'stop'} Polar HR manager. Please try again.`);
+    } finally {
+      setPolarLoading(false);
     }
   };
 
@@ -1788,22 +1860,6 @@ useEffect(() => {
     
     const filteredIndex = filteredProcedures.findIndex(proc => proc === currentProc);
     return filteredIndex >= 0 ? filteredProcedures[filteredIndex] : filteredProcedures[0];
-  };
-
-  const isExperimentComplete = () => {
-    if (!experimentData || !experimentData.procedures) return false;
-    
-    const filteredProcedures = experimentData.procedures.filter(
-      procedure => procedure.id !== 'consent' && 
-                   procedure.id !== 'data-collection' && 
-                   !procedure.name?.toLowerCase().includes('consent')
-    );
-    
-    const allProcedureIndices = filteredProcedures.map(proc => 
-      experimentData.procedures.findIndex(p => p === proc)
-    );
-    
-    return allProcedureIndices.every(index => completedProcedures.includes(index));
   };
 
   const handleCompleteExperiment = async () => {
@@ -2182,9 +2238,14 @@ useEffect(() => {
           }}
           className="complete-experiment-btn"
           style={{ backgroundColor: '#dc3545' }}
-          disabled={!emotiBitRunning}
+          disabled={!emotiBitRunning || emotiBitLoading}
         >
-          {emotiBitRunning ? '⏹️ Stop Event Manager' : '✓ Event Manager Stopped'}
+          {emotiBitLoading 
+            ? 'Stopping...' 
+            : emotiBitRunning 
+              ? 'Stop Event Manager' 
+              : '✓ Event Manager Stopped'
+          }
         </button>
       )}
       
@@ -2196,9 +2257,14 @@ useEffect(() => {
           }}
           className="complete-experiment-btn"
           style={{ backgroundColor: '#dc3545' }}
-          disabled={!vernierRunning}
+          disabled={!vernierRunning || vernierLoading}
         >
-          {vernierRunning ? '⏹️ Stop Vernier Manager' : '✓ Vernier Manager Stopped'}
+          {vernierLoading 
+            ? 'Stopping...' 
+            : vernierRunning 
+              ? 'Stop Vernier Manager' 
+              : '✓ Vernier Manager Stopped'
+          }
         </button>
       )}
       
@@ -2210,9 +2276,14 @@ useEffect(() => {
           }}
           className="complete-experiment-btn"
           style={{ backgroundColor: '#dc3545' }}
-          disabled={!polarRunning}
+          disabled={!polarRunning || polarLoading}
         >
-          {polarRunning ? '⏹️ Stop Polar Manager' : '✓ Polar Manager Stopped'}
+          {polarLoading 
+            ? 'Stopping...' 
+            : polarRunning 
+              ? 'Stop Polar Manager' 
+              : '✓ Polar Manager Stopped'
+          }
         </button>
       )}
 
@@ -2320,6 +2391,9 @@ useEffect(() => {
         emotiBitRunning={emotiBitRunning}
         vernierRunning={vernierRunning}
         polarRunning={polarRunning}
+        emotiBitLoading={emotiBitLoading}
+        vernierLoading={vernierLoading}
+        polarLoading={polarLoading}
         selectedMicrophone={selectedMicrophone}
         audioDevices={audioDevices}
         isLoadingDevices={isLoadingDevices}
@@ -2345,7 +2419,9 @@ useEffect(() => {
           allowEventMarkers={participantRegistered}
           currentSession={currentSession}
           experimentData={experimentData}
-          
+          emotiBitLoading={emotiBitLoading}
+          vernierLoading={vernierLoading}
+          polarLoading={polarLoading}
           // Shared state
           emotiBitRunning={emotiBitRunning}
           vernierRunning={vernierRunning}
