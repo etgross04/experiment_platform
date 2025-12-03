@@ -30,6 +30,18 @@
         "title": "Step 3",
         "label": "Signal Verification",
         "content": "1. Connect the EmotiBit to the computer using the provided USB cable\n\n2. Open the EmotiBit monitoring software on the computer\n\n3. Verify heart rate signal is being detected (should show regular peaks)\n\n4. Check EDA baseline readings are stable and within normal range (typically 1-20 μS)\n\n5. Confirm temperature sensor shows reasonable body temperature (~32-37°C)\n\n6. Have participant take a deep breath to test signal responsiveness\n\n7. Document any signal issues in the session log and troubleshoot if needed\n\n8. If signals are poor, check sensor contact and clean skin area again"
+      },
+      {
+        "id": "step4",
+        "title": "Step 4",
+        "label": "Attaching the Polar H10",
+        "content": "1. Detatch the sensor from the strap and moisten the inside of the strap behind the electrodes (side facing the subject). Use either water or conducting gel.\n\n2. Fit the strap to the subject such that the sensor area is just below the chest. The strap should be snug but ou should be able to fit two fingers beneath it. \n\n3. Snap the sensor into place with the Polar log right-side up.\n\n4. Click the Start Polar H10 Stream\n\n5. Wait for a confirmation message. If the Polar H10 is not detected, have the subject adjust the strap tighter and moisten the electrodes again if necessary."
+      },
+      {
+        "id": "step5",
+        "title": "Step 5",
+        "label": "Attaching the Vernier Respiration Belt",
+        "content": "1. Place the sensor over the subject's chest or abdomen, with the label facing out and (if BlueTooth is not used) the wire running down over the sternum. The sensor does not need to rest on the skin; it can be worn over clothing.\n\n2. Secure it snugly using the strap and clips.\n\n3. If the light is not on, tighten the strap until the light turns green. Loosen the strap if the light turns red. A red light indicates too much tension.\n\n4. Remind them to notify you if they feel any discomfort during the experiment\n\n5. Document sensor placement and any initial observations in your session log\n\n6. Prepare to begin the experimental protocol as outlined."
       }
     ]
   },
@@ -139,40 +151,6 @@
         "title": "Step 2",
         "label": "Recording SER Baseline",
         "content": "1. Once the procedure begins, ensure that the subject sees the SER Baseline page on their interface\n\n2. Instruct the subject to click 'Start' to begin the procedure\n\n3. The subject will be presented with a series of questions displayed on their screen. Instruct the subject to begin recording their response for each question by clicking 'Record' beneath each question\n\n4. Monitor the audio level if possible and make adjustments to the loudness if necessary. The procedure should take 2-5 minutes"
-      }
-    ]
-  },
-  "instructiontest": {
-    "title": "Instruction_test",
-    "steps": [
-      {
-        "id": "step1",
-        "title": "Step 1",
-        "label": "Instruction_test - Step 1",
-        "content": "Test 1."
-      },
-      {
-        "id": "step2",
-        "title": "Step 2",
-        "label": "Instruction_test - Step 2",
-        "content": "Test 2."
-      }
-    ]
-  },
-  "test2": {
-    "title": "Test2",
-    "steps": [
-      {
-        "id": "step1",
-        "title": "Step 1",
-        "label": "Test2 - Step 1",
-        "content": "Pet the cat."
-      },
-      {
-        "id": "step2",
-        "title": "Step 2",
-        "label": "Test2 - Step 2",
-        "content": "Feed the cat."
       }
     ]
   }
