@@ -1,3 +1,18 @@
+-- Experiments/Sessions metadata table
+CREATE TABLE IF NOT EXISTS experiments (
+    id SERIAL PRIMARY KEY,
+    experiment_name VARCHAR(255) NOT NULL,
+    trial_name VARCHAR(255) NOT NULL,
+    subject_id VARCHAR(255) NOT NULL,
+    experimenter_name VARCHAR(255),
+    pid VARCHAR(100),
+    class_name VARCHAR(255),
+    session_start_time TIMESTAMPTZ,
+    session_end_time TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(experiment_name, trial_name, subject_id)
+);
+
 -- SER data table 
 CREATE TABLE IF NOT EXISTS ser_data (
     id BIGSERIAL PRIMARY KEY,
@@ -28,21 +43,6 @@ CREATE TABLE IF NOT EXISTS emotibit_data (
     data_reliability INTEGER,
     metric_value REAL NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Experiments/Sessions metadata table
-CREATE TABLE IF NOT EXISTS experiments (
-    id SERIAL PRIMARY KEY,
-    experiment_name VARCHAR(255) NOT NULL,
-    trial_name VARCHAR(255) NOT NULL,
-    subject_id VARCHAR(255) NOT NULL,
-    experimenter_name VARCHAR(255),
-    pid VARCHAR(100),
-    class_name VARCHAR(255),
-    session_start_time TIMESTAMPTZ,
-    session_end_time TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(experiment_name, trial_name, subject_id)
 );
 
 -- Event markers table
