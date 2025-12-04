@@ -97,4 +97,4 @@ For issues, questions, or contributions, please contact Brian Cantrell @ brn.cnt
 
 ## Citation
 
-If you use this platform in your research, please cite Brian Cantrell, PhD, UCSD Cognitive Science XRLAB.
+If you use this platform in your research, please cite Cantrell, B., University of California San Diego, Cognitive Sciences XRLAB.
