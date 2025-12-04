@@ -1,6 +1,6 @@
-## Usage
+# Usage
 
-### Creating an Experiment
+## Creating an Experiment
 
 1. **Navigate to Experiment Builder** and design your experiment by:
    - Dragging procedures from the library to the canvas
@@ -25,7 +25,10 @@
    - Access procedure-specific controls in the tool panel
    - Complete experiment and save all data
 
-### Data Organization
+## Data Organization
+### IMPORTANT
+The Analysis Platform and the Experiment Platform are intended to work together and share the same path structures. When using the Analysis Platform, browse and select a specific <trial_name> folder (Experiment_Platform/subject_data/<experiment_name>/<trial_name>/). Do not select <experiment_name>.
+If custom analysis combinations are required, create a custom "subect_data" folder on the desktop and place your desired <subject_id> folders in it. Then, browse and select subject_data/. 
 
 Data is organized hierarchically:
 
@@ -40,6 +43,7 @@ experiments/subject_data/<experiment_name>/<trial_name>/<timestamp_subject_id>/v
 
 Polar h10 data is stored in:
 experiments/subject_data/<experiment_name>/<trial_name>/<timestamp_subject_id>/cardiac_data/
+
 
 ## Configuration
 
@@ -57,8 +61,6 @@ Each procedure can be configured with:
 - External software integration settings
 - Survey URLs and autofill parameters
 
-## API Endpoints
-
 ## Extending the Platform
 
 ### Adding New Procedures
@@ -69,25 +71,30 @@ Each procedure can be configured with:
 4. Register component in SubjectInterface.js
 5. Add backend endpoints if needed for specialized data collection
 
+### Adding Managers
+If new sensors are added, python modules must be added for managing their streams
+1. Create the python module using existing sensor managers as a guide. 
+2. Add the necessary imports and initialization to app.py
+3. Front end refactoring will be required for interfacing with the new sensor (buttons, alerts, etc.)
+
 ### Custom Task Integration
 
-The platform supports integration with external tools like PsychoPy through transition screens and session coordination.
+The platform supports integration with external tools like PsychoPy through transition screens and session coordination. Procedures performed in external software can be added to the procedure inventory and their specific platform can be specified.
 
 ## Data Privacy & Ethics
 
-- All participant data is stored locally
+- All participant data is stored locally, including data stored in the postgres db.
 - Consent forms required before data collection
 - Session-based isolation of participant information
-- Support for institutional review board (IRB) approved consent documents
 
 ## License
 
-[TODO]
+TODO
 
 ## Support
 
-For issues, questions, or contributions, please contact Brian @ brn.cntrll at gmail.
+For issues, questions, or contributions, please contact Brian Cantrell @ brn.cntrll at gmail.
 
 ## Citation
 
-If you use this platform in your research, please cite [citation information].
+If you use this platform in your research, please cite Brian Cantrell, PhD, UCSD Cognitive Science XRLAB.
