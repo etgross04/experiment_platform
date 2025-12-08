@@ -11,6 +11,7 @@ from FormManager import FormManager
 from SERManager import SERManager
 from VernierManager import VernierManager
 from PolarManager import PolarManager
+from LSLManager import LSLManager
 from datetime import datetime, timezone
 import json
 import threading
@@ -115,6 +116,7 @@ ser_manager = None
 form_manager = None
 vernier_manager = None
 polar_manager = None
+lsl_manager = None
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['DEBUG'] = True
@@ -338,7 +340,7 @@ def upload_survey():
 @app.route('/set_event_marker', methods=['POST'])
 def set_event_marker():
     """Set event marker for the event manager"""
-    global event_manager, vernier_manager, polar_manager
+    global event_manager, vernier_manager, polar_manager, lsl_manager
     data = request.get_json()
     event_marker = data.get('event_marker')
 
@@ -346,9 +348,13 @@ def set_event_marker():
         vernier_manager.event_marker = event_marker
     if polar_manager is not None:
         polar_manager.event_marker = event_marker
-
+    
     try:
         event_manager.event_marker = event_marker
+
+        if lsl_manager is not None:
+            lsl_manager.send_marker(event_marker, event_manager.condition)
+
         print("Event marker set to: ", event_marker)
         return jsonify({'status': 'Event marker set.'})
     except Exception as e:
@@ -368,7 +374,7 @@ def set_condition():
         
 @app.route('/record_task_audio', methods=['POST'])
 def record_task_audio():
-    global recording_manager, audio_file_manager, subject_manager, vernier_manager, event_manager
+    global recording_manager, audio_file_manager, subject_manager, vernier_manager, event_manager, lsl_manager
     data = request.get_json()
     action = data.get('action')
     question = data.get('question')
@@ -380,6 +386,7 @@ def record_task_audio():
         if action == 'start':
             recording_manager.start_recording()
             event_manager.event_marker = event_marker
+            lsl_manager.send_marker(event_marker, condition)
             vernier_manager.event_marker = event_marker
 
             start_time = 10 # seconds
@@ -2399,7 +2406,7 @@ def instantiate_modules(template_path):
         print(f"needs_mat: {needs_mat}")
 
         global recording_manager, audio_file_manager, vernier_manager, polar_manager
-        global test_manager, transcription_manager, ser_manager
+        global test_manager, transcription_manager, ser_manager, lsl_manager
         
         # Initialize audio and SER components together
         if needs_audio_ser:
@@ -2427,7 +2434,7 @@ def instantiate_modules(template_path):
         # Initialize EmotiBit if needed (placeholder for future implementation)
         if needs_emotibit:
             print("\n=== EmotiBit Requested ===")
-            print("⚠ EmotiBit streaming not yet implemented")
+            lsl_manager = LSLManager()
 
         # Initialize test manager if MAT is needed
         if needs_mat:
