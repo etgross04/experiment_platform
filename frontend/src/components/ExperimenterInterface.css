@@ -1719,3 +1719,10 @@
   box-sizing: border-box;
   margin-top: 10px;
 }
+
+.experiment-completion-section .complete-experiment-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  box-shadow: none;
+  
+}

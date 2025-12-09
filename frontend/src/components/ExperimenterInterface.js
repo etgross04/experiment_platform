@@ -2353,7 +2353,6 @@ useEffect(() => {
       <button 
         onClick={convertDataToCsv}
         className="complete-experiment-btn"
-        style={{ backgroundColor: '#6f42c1' }}
         disabled={emotiBitRunning || vernierRunning || polarRunning || checkingStatus}
       >
         Convert Data to CSV
@@ -2362,7 +2361,6 @@ useEffect(() => {
       <button 
         onClick={pushDataToDatabase}
         className="complete-experiment-btn"
-        style={{ backgroundColor: '#6f42c1' }}
         disabled={emotiBitRunning || vernierRunning || polarRunning || checkingStatus}
       >
         Push Data to Database
@@ -2371,7 +2369,6 @@ useEffect(() => {
       <button 
         onClick={handleCompleteExperiment}
         className="complete-experiment-btn"
-        style={{ marginTop: '20px' }}
       >
         ✅ Complete Experiment & Reset 
       </button>
