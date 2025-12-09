@@ -1,7 +1,7 @@
 from pylsl import StreamInfo, StreamOutlet
 
 class LSLManager:
-    def __init__(self, name="DataSyncMarker", source_id="exp_platform"):
+    def __init__(self, name="DataSyncMarker", source_id="12345"):
         self.info = StreamInfo(
             name=name,
             type='Markers',
@@ -19,7 +19,7 @@ class LSLManager:
     
     def send_marker(self, marker, condition=None):
         if self.outlet:
-
+            print(f"Sending LSL marker: {marker} with condition: {condition}")
             marker_str = f"{marker}|{condition}" if condition else marker
             self.outlet.push_sample([marker_str])
     

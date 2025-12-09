@@ -98,6 +98,15 @@ Install h5py:
 ```
    pip install --no-cach-dir h5py
 ```
+Install Lab Streaming Layer:
+```
+   brew install labstreaminglayer/tap/lsl
+```
+Export the LSL library path to your zshrc (or bash) profile:
+```
+   echo 'export DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH' >> ~/.zshrc
+   source ~/.zshrc
+```
 
 Install Python dependencies:
 ```

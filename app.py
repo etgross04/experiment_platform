@@ -1683,7 +1683,7 @@ def get_ser_question_sets():
 @app.route('/start_event_manager', methods=['POST'])
 def start_event_manager():
     """Start the event manager"""
-    global event_manager
+    global event_manager, lsl_manager
     try:
         if event_manager.is_streaming:
             return jsonify({'success': True, 'message': 'Event manager is already running'})
@@ -1692,8 +1692,11 @@ def start_event_manager():
             return jsonify({'error': 'Data folder not set for event manager'}), 400
         
         event_manager.initialize_hdf5_file()
-        event_manager.start()
 
+        event_manager.start()
+        if lsl_manager:
+            lsl_manager.start()
+            print("LSL manager started alongside event manager.")
         return jsonify({'success': True, 'message': 'Event manager started'})
     
     except Exception as e:
@@ -1703,8 +1706,12 @@ def start_event_manager():
 @app.route('/stop_event_manager', methods=['POST'])
 def stop_event_manager():
     """Stop the event manager"""
+    global event_manager, lsl_manager
     try:
         event_manager.stop()
+        if lsl_manager:
+            lsl_manager.stop()
+            print("LSL manager stopped alongside event manager.")
         return jsonify({'success': True, 'message': 'Event manager stopped'})
     except Exception as e:
         print(f"Error stopping event manager: {e}")
