@@ -1,6 +1,8 @@
 from flask import Flask, send_from_directory, send_file, jsonify, request, Response
 from flask_cors import CORS
 import os
+import sys
+import signal
 from EventManager import EventManager
 import TimestampManager as tm
 from RecordingManager import RecordingManager
@@ -87,6 +89,14 @@ validate_environment()
 # SSE connection management
 session_queues = {}
 session_completions = {}
+
+# heartbeat monitoring
+experimenter_heartbeats = {}  # {session_id: last_heartbeat_timestamp}
+cleanup_lock = threading.Lock()
+HEARTBEAT_TIMEOUT = 15 
+HEARTBEAT_GRACE_ATTEMPTS = 3  
+SHUTDOWN_FLAG = threading.Event()
+heartbeat_monitor_thread = None
 
 # Global event system for broadcasting
 update_event = threading.Event()
@@ -2610,6 +2620,316 @@ def reset_experiment_managers():
     except Exception as e:
         print(f"Error resetting managers: {e}")
 
+
+### CLEANUP / HEARTBEAT MONTIORING ###
+@app.route('/api/sessions/<session_id>/heartbeat', methods=['POST'])
+def experimenter_heartbeat(session_id):
+    """
+    Experimenter window sends this every 5 seconds to indicate it's still open
+    """
+    with cleanup_lock:
+        experimenter_heartbeats[session_id] = {
+            'last_seen': time.time(),
+            'missed_beats': 0  
+        }
+    return jsonify({'success': True})
+
+
+@app.route('/api/sessions/<session_id>/cleanup-experimenter', methods=['POST'])
+def cleanup_experimenter_session(session_id):
+    """
+    Clean up session when experimenter closes their window.
+    Protected against double-cleanup.
+    """
+    with cleanup_lock:  # Prevent simultaneous cleanup
+        if session_id not in ACTIVE_SESSIONS:
+            return jsonify({
+                'success': True, 
+                'message': 'Session already cleaned up',
+                'already_cleaned': True
+            })
+        
+        session_data = ACTIVE_SESSIONS[session_id]
+        if session_data.get('_cleanup_in_progress'):
+            return jsonify({
+                'success': True,
+                'message': 'Cleanup already in progress',
+                'already_cleaned': True
+            })
+        
+        session_data['_cleanup_in_progress'] = True
+    
+    try:
+        session_data = ACTIVE_SESSIONS.get(session_id)
+        if not session_data:
+            return jsonify({'success': True, 'message': 'Session not found'})
+        
+        global event_manager, vernier_manager, polar_manager, recording_manager
+        
+        if event_manager and event_manager.is_streaming:
+            try:
+                event_manager.stop()
+                print(f"Stopped event manager for session {session_id}")
+            except Exception as e:
+                print(f"Error stopping event manager: {e}")
+        
+        if vernier_manager and hasattr(vernier_manager, '_running') and vernier_manager._running:
+            try:
+                vernier_manager.stop()
+                print(f"Stopped vernier manager for session {session_id}")
+            except Exception as e:
+                print(f"Error stopping vernier manager: {e}")
+        
+        if polar_manager and hasattr(polar_manager, '_running') and polar_manager._running:
+            try:
+                polar_manager.stop()
+                print(f"Stopped polar manager for session {session_id}")
+            except Exception as e:
+                print(f"Error stopping polar manager: {e}")
+        
+        if recording_manager and hasattr(recording_manager, 'stream_is_active') and recording_manager.stream_is_active:
+            try:
+                recording_manager.stop_recording()
+                print(f"Stopped recording manager for session {session_id}")
+            except Exception as e:
+                print(f"Error stopping recording manager: {e}")
+        
+        # Save final session state
+        if session_data.get('subject_dir') and os.path.exists(session_data['subject_dir']):
+            try:
+                session_file = os.path.join(session_data['subject_dir'], 'session_terminated.json')
+                session_data['terminated_at'] = datetime.now(timezone.utc).isoformat()
+                session_data['termination_reason'] = 'experimenter_window_closed'
+                session_data.pop('_cleanup_in_progress', None)  
+                with open(session_file, 'w') as f:
+                    json.dump(session_data, f, indent=2)
+                print(f"Saved session termination record")
+            except Exception as e:
+                print(f"Error saving session file: {e}")
+        
+        try:
+            termination_event = {
+                'event_type': 'session_terminated',
+                'session_id': session_id,
+                'reason': 'experimenter_closed'
+            }
+            broadcast_to_session(session_id, termination_event)
+        except Exception as e:
+            print(f"Error broadcasting termination: {e}")
+    
+        try:
+            reset_experiment_managers()
+            print(f"Reset experiment managers")
+        except Exception as e:
+            print(f"Error resetting managers: {e}")
+        
+        with cleanup_lock:
+            if session_id in session_queues:
+                try:
+                    session_queues[session_id].put(None)
+                except:
+                    pass
+                del session_queues[session_id]
+            
+            if session_id in session_completions:
+                del session_completions[session_id]
+            
+            if session_id in experimenter_heartbeats:
+                del experimenter_heartbeats[session_id]
+            
+            if session_id in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[session_id]
+        
+        print(f"Session {session_id} fully cleaned up")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Session cleaned up successfully'
+        })
+        
+    except Exception as e:
+        print(f"✗ Error cleaning up session {session_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        with cleanup_lock:
+            if session_id in ACTIVE_SESSIONS:
+                ACTIVE_SESSIONS[session_id].pop('_cleanup_in_progress', None)
+        
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+def check_stale_sessions():
+    """
+    Background thread to check for stale sessions where experimenter closed without cleanup.
+    Uses grace period to avoid false positives.
+    """
+    print("Heartbeat monitor started")
+    
+    while not SHUTDOWN_FLAG.is_set():
+        try:
+            current_time = time.time()
+            stale_sessions = []
+            
+            with cleanup_lock:
+                for session_id, heartbeat_data in list(experimenter_heartbeats.items()):
+                    time_since_last = current_time - heartbeat_data['last_seen']
+                    
+                    if time_since_last > HEARTBEAT_TIMEOUT:
+                        heartbeat_data['missed_beats'] += 1
+                        
+                        if heartbeat_data['missed_beats'] >= HEARTBEAT_GRACE_ATTEMPTS:
+                            stale_sessions.append(session_id)
+                            print(f"Session {session_id} stale: {time_since_last:.1f}s since last heartbeat ({heartbeat_data['missed_beats']} missed)")
+                    else:
+                        heartbeat_data['missed_beats'] = 0
+            
+            for session_id in stale_sessions:
+                print(f"Initiating cleanup for stale session: {session_id}")
+                try:
+                    with app.app_context():
+                        cleanup_experimenter_session(session_id)
+                except Exception as e:
+                    print(f"Error cleaning up stale session {session_id}: {e}")
+                
+        except Exception as e:
+            print(f"Error in stale session check: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        SHUTDOWN_FLAG.wait(timeout=5) 
+
+@app.route('/api/sessions/<session_id>/check-active', methods=['GET'])
+def check_session_active(session_id):
+    """
+    Check if a session is still active (for subject reconnection)
+    Thread-safe read
+    """
+    try:
+        with cleanup_lock:
+            is_active = session_id in ACTIVE_SESSIONS
+        
+        if is_active:
+            return jsonify({
+                'success': True,
+                'active': True,
+                'current_procedure': session_completions.get(session_id, {}).get('current_procedure', 0),
+                'completed_procedures': session_completions.get(session_id, {}).get('completed_procedures', [])
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'active': False,
+                'message': 'Session has been terminated'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/shutdown', methods=['POST', 'OPTIONS'])
+def shutdown_server():
+    """
+    Shutdown the Flask server gracefully.
+    Only allows shutdown if no active experiment sessions exist.
+    """
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Check for active sessions
+        with cleanup_lock:
+            active_count = len(ACTIVE_SESSIONS)
+            if active_count > 0:
+                print(f"Shutdown refused: {active_count} active session(s)")
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot shutdown: Active experiment sessions exist',
+                    'active_sessions': active_count,
+                    'session_ids': list(ACTIVE_SESSIONS.keys())
+                }), 400
+        
+        print("\n" + "="*50)
+        print("SERVER SHUTDOWN REQUESTED")
+        print("="*50)
+        
+        SHUTDOWN_FLAG.set()
+ 
+        global event_manager, vernier_manager, polar_manager, recording_manager
+        
+        try:
+            if event_manager and event_manager.is_streaming:
+                event_manager.stop()
+                print("Stopped event manager")
+        except Exception as e:
+            print(f"Error stopping event manager: {e}")
+        
+        try:
+            if vernier_manager and hasattr(vernier_manager, '_running') and vernier_manager._running:
+                vernier_manager.stop()
+                print("Stopped vernier manager")
+        except Exception as e:
+            print(f"Error stopping vernier manager: {e}")
+        
+        try:
+            if polar_manager and hasattr(polar_manager, '_running') and polar_manager._running:
+                polar_manager.stop()
+                print("Stopped polar manager")
+        except Exception as e:
+            print(f"Error stopping polar manager: {e}")
+        
+        try:
+            if recording_manager and hasattr(recording_manager, 'stream_is_active') and recording_manager.stream_is_active:
+                recording_manager.stop_recording()
+                print("Stopped recording manager")
+        except Exception as e:
+            print(f"Error stopping recording manager: {e}")
+        
+        print("All managers stopped")
+        print("Initiating server shutdown...")
+        print("="*50 + "\n")
+        
+        def shutdown():
+            try:
+                print("Shutting down Flask server...")
+                global heartbeat_monitor_thread
+                if heartbeat_monitor_thread and heartbeat_monitor_thread.is_alive():
+                    print("Waiting for heartbeat monitor to stop...")
+                    heartbeat_monitor_thread.join(timeout=2.0)  # Wait up to 2 seconds
+                    if heartbeat_monitor_thread.is_alive():
+                        print("Warning: Heartbeat thread didn't stop in time")
+                    else:
+                        print("Heartbeat monitor stopped cleanly")
+                
+                time.sleep(0.5)
+                os.kill(os.getpid(), signal.SIGTERM)
+            except Exception as e:
+                print(f"Shutdown error: {e}")
+                os.kill(os.getpid(), signal.SIGTERM)
+    
+        shutdown_thread = threading.Thread(target=shutdown, daemon=True)
+        shutdown_thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Server shutdown initiated'
+        }), 200
+        
+    except Exception as e:
+        print(f"Error during shutdown: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+     
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react_app(path):
@@ -2619,4 +2939,11 @@ def serve_react_app(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
+    heartbeat_monitor_thread = threading.Thread(
+        target=check_stale_sessions, 
+        daemon=True,
+        name="HeartbeatMonitorThread"
+    )
+    heartbeat_monitor_thread.start()
     app.run(host='127.0.0.1', port=5001, debug=True, threaded=True)
+    

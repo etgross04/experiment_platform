@@ -2274,7 +2274,7 @@ useEffect(() => {
             ? 'Stopping...' 
             : emotiBitRunning 
               ? 'Stop Event Manager' 
-              : '✓ Event Manager Stopped'
+              : 'Event Manager Stopped'
           }
         </button>
       )}
@@ -2293,7 +2293,7 @@ useEffect(() => {
             ? 'Stopping...' 
             : vernierRunning 
               ? 'Stop Vernier Manager' 
-              : '✓ Vernier Manager Stopped'
+              : 'Vernier Manager Stopped'
           }
         </button>
       )}
@@ -2312,7 +2312,7 @@ useEffect(() => {
             ? 'Stopping...' 
             : polarRunning 
               ? 'Stop Polar Manager' 
-              : '✓ Polar Manager Stopped'
+              : 'Polar Manager Stopped'
           }
         </button>
       )}

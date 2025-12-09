@@ -176,6 +176,56 @@ function SubjectInterface() {
   const [currentProcedureIndex, setCurrentProcedureIndex] = useState(0);
   const [showAudioTest, setShowAudioTest] = useState(false);
 
+  // Cleanup states
+  const [sessionTerminated, setSessionTerminated] = useState(false);
+  const [restoredState, setRestoredState] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId || consentMode) return;
+    
+    const checkSessionActive = async () => {
+      try {
+        const response = await fetch(`/api/sessions/${sessionId}/check-active`);
+        const data = await response.json();
+        
+        if (!data.success) {
+          console.error('Error checking session status');
+          return;
+        }
+        
+        if (!data.active) {
+          setSessionTerminated(true);
+          setShowForm(false);
+          alert('This experiment session has been closed by the experimenter.');
+          return;
+        }
+        
+        if (data.current_procedure !== undefined) {
+          console.log('Restoring session state:', {
+            current_procedure: data.current_procedure,
+            completed_procedures: data.completed_procedures
+          });
+          setCurrentProcedureIndex(data.current_procedure);
+          
+          if (experimentData && experimentData.procedures && experimentData.procedures[data.current_procedure]) {
+            setCurrentProcedure(experimentData.procedures[data.current_procedure]);
+            setCurrentTask('active');
+          }
+          
+          setRestoredState(true);
+        }
+      } catch (error) {
+        console.error('Error checking session status:', error);
+      }
+    };
+    
+    checkSessionActive();
+  
+    const checkInterval = setInterval(checkSessionActive, 30000);
+    
+    return () => clearInterval(checkInterval);
+  }, [sessionId, experimentData, consentMode]);
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const session = urlParams.get('session');
@@ -244,10 +294,10 @@ function SubjectInterface() {
     if (!sessionId || showForm) return;
 
     const handleBeforeUnload = (event) => {
-      const message = 'Are you sure you want to leave? Closing this window will abandon your experiment session and you may lose your progress.';
+      const message = 'Your progress will be saved. You can return to this link to continue.';
       event.preventDefault();
-      event.returnValue = message; // For Chrome/Safari
-      return message; // For other browsers
+      event.returnValue = message;
+      return message;
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -530,7 +580,23 @@ function SubjectInterface() {
   };
 
   const renderParticipantForm = () => {
+    if (sessionTerminated) {
+      return (
+        <div className="subject-interface">
+          <div className="session-terminated-screen">
+            <div className="termination-icon">⚠️</div>
+            <h2>Session Ended</h2>
+            <p>This experiment session has been closed by the experimenter.</p>
+            <p>Thank you for your participation.</p>
+            <p style={{ marginTop: '20px', fontSize: '0.9em', color: '#666' }}>
+              You can now close this window.
+            </p>
+          </div>
+        </div>
+      );
+    }  
     return (
+      
       <div className="participant-form-container">
         <div className="form-header">
           <h2>Participant Information</h2>
@@ -721,9 +787,30 @@ function SubjectInterface() {
       );
     }
 
+    const wrapWithRestorationNotice = (content) => {
+      if (restoredState && currentTask === 'active') {
+        return (
+          <>
+            <div className="restoration-notice" style={{
+              padding: '10px',
+              backgroundColor: '#d4edda',
+              color: '#155724',
+              borderRadius: '4px',
+              marginBottom: '10px',
+              textAlign: 'center'
+            }}>
+              Session restored - continuing from where you left off
+            </div>
+            {content}
+          </>
+        );
+      }
+      return content;
+    };
+
     switch(currentTask) {
       case 'active':
-        return renderProcedureContainer();
+        return wrapWithRestorationNotice(renderProcedureContainer());
       case 'completed':
         return (
           <div className="completion-message">

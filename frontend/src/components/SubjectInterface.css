@@ -929,3 +929,98 @@
   line-height: 1.6;
   max-width: 600px;
 }
+
+/* Session Termination Screen - matches completion-message styling */
+.session-terminated-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  text-align: center;
+  background-color: #f8f9fa;
+  padding: 20px;
+}
+
+.session-terminated-screen > div {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  padding: 60px;
+  max-width: 500px;
+  width: 100%;
+}
+
+.termination-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  display: block;
+  animation: bounce 1s ease-in-out;
+}
+
+.session-terminated-screen h2 {
+  color: #e53e3e;
+  margin-bottom: 15px;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.session-terminated-screen p {
+  color: #4a5568;
+  font-size: 16px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+/* Session Restoration Notice */
+.restoration-notice {
+  background: #d4edda;
+  color: #155724;
+  padding: 15px 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  text-align: center;
+  font-weight: 500;
+  font-size: 16px;
+  border: 2px solid #c3e6cb;
+  animation: fadeInDown 0.5s ease-out;
+  box-shadow: 0 2px 8px rgba(21, 87, 36, 0.1);
+}
+
+/* Fade in down animation for restoration notice */
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+  .session-terminated-screen > div {
+    padding: 40px 20px;
+    margin: 10px;
+  }
+
+  .termination-icon {
+    font-size: 48px;
+  }
+
+  .session-terminated-screen h2 {
+    font-size: 24px;
+  }
+
+  .session-terminated-screen p {
+    font-size: 14px;
+  }
+
+  .restoration-notice {
+    padding: 12px 15px;
+    font-size: 14px;
+    margin-bottom: 15px;
+  }
+}
