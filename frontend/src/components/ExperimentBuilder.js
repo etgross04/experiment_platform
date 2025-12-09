@@ -2187,14 +2187,14 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
             Enter the full URL to your external consent form. This will be opened in a separate window for the participant to review.
           </small>
 
-          <label className="checkbox-label">
+          {/* <label className="checkbox-label">
             <input 
               type="checkbox" 
               checked={formData.requireSignature || false}
               onChange={(e) => handleInputChange('requireSignature', e.target.checked)}
             />
             Require digital signature/acknowledgment
-          </label>
+          </label> */}
         </div>
       );
 
