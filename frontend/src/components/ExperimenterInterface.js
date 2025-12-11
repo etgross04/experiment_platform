@@ -12,6 +12,15 @@ function PreTestInstructionsWizard({
   allowEventMarkers,
   currentSession,
   experimentData,
+  emotibitDataImported,
+  parsingEventMarkers,
+  eventMarkerFilePath,
+  launchEmotibitDataParser,
+  openEventMarkerFilePicker,
+
+  // Shared state props
+
+  // Shared state props
 
   // Shared state props
   emotiBitRunning,
@@ -698,6 +707,12 @@ function SettingsPanel({
   allowEventMarkers, 
   launchSubjectInterface, 
   currentSession,
+  emotibitDataImported,
+  parsingEventMarkers,
+  eventMarkerFilePath,
+  launchEmotibitDataParser,
+  openEventMarkerFilePicker,
+  parseEventMarkerFile,
   emotiBitRunning,
   vernierRunning,
   polarRunning,
@@ -867,8 +882,25 @@ function SettingsPanel({
               >
                 Import EmotiBit Data
               </button>
-              
-              {uploadEmotibitStatus && (
+              <button
+                  onClick={launchEmotibitDataParser}
+                  className="import-emotibit-btn"
+                  disabled={!emotibitDataImported}
+                  style={{ marginTop: '10px' }}
+                >
+                  Open DataParser
+                </button>
+
+                <button
+                  onClick={openEventMarkerFilePicker}
+                  className="import-emotibit-btn"
+                  disabled={!emotibitDataImported || parsingEventMarkers}
+                  style={{ marginTop: '10px' }}
+                >
+                  {parsingEventMarkers ? 'Parsing...' : 'Parse Event Marker File'}
+                </button>
+
+                {uploadEmotibitStatus && (
                 <div className="emotibit-upload-status">
                   {uploadEmotibitStatus}
                 </div>
@@ -877,6 +909,11 @@ function SettingsPanel({
               {emotibitFilePath && (
                 <div className="emotibit-file-path">
                   {emotibitFilePath}
+                </div>
+              )}
+              {eventMarkerFilePath && (
+                <div className="emotibit-file-path" style={{ marginTop: '10px', backgroundColor: '#d4edda' }}>
+                  {eventMarkerFilePath}
                 </div>
               )}
             </div>
@@ -1052,9 +1089,11 @@ function ExperimenterInterface() {
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [audioTestStarted, setAudioTestStarted] = useState(false);
   const [audioTestCompleted, setAudioTestCompleted] = useState(false);
-
   const [uploadEmotibitStatus, setUploadEmotibitStatus] = useState('');
   const [emotibitFilePath, setEmotibitFilePath] = useState('');
+  const [emotibitDataImported, setEmotibitDataImported] = useState(false);
+  const [parsingEventMarkers, setParsingEventMarkers] = useState(false);
+  const [eventMarkerFilePath, setEventMarkerFilePath] = useState('');
 
   // const [managerStatus, setManagerStatus] = useState({
   //   event_manager: false,
@@ -1258,6 +1297,7 @@ function ExperimenterInterface() {
         .map(r => `${r.filename}: ${r.filePath}`)
         .join('\n');
       setEmotibitFilePath(`EmotiBit CSV Locations:\n${successfulPaths}`);
+      setEmotibitDataImported(true);
     }
 
     console.log('Upload results:', results);
@@ -1265,6 +1305,79 @@ function ExperimenterInterface() {
 
   const openEmotibitFilePicker = () => {
     document.getElementById('main-emotibit-file-input').click();
+  };
+
+
+
+  const launchEmotibitDataParser = async () => {
+    try {
+      const response = await fetch('/api/launch-emotibit-parser', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('EmotiBit DataParser launched:', data.message);
+      } else {
+        console.error('Failed to launch EmotiBit DataParser');
+        alert('Failed to launch EmotiBit DataParser. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error launching EmotiBit DataParser:', error);
+      alert('Error launching EmotiBit DataParser. Please try again.');
+    }
+  };
+
+  const openEventMarkerFilePicker = () => {
+    document.getElementById('event-marker-file-input').click();
+  };
+
+  const parseEventMarkerFile = async (event) => {
+    if (!event || !event.target || !event.target.files) {
+      console.error('No file selected');
+      return;
+    }
+
+    const file = event.target.files[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.name.endsWith('.csv')) {
+      alert('Please select a CSV file');
+      return;
+    }
+
+    setParsingEventMarkers(true);
+    setEventMarkerFilePath('');
+
+    try {
+      const formData = new FormData();
+      formData.append('ground_truth_file', file);
+      formData.append('session_id', currentSession);
+
+      const response = await fetch('/api/parse-event-markers', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setEventMarkerFilePath(`Event markers parsed successfully!\nFile: ${data.file_path}\nMarkers found: ${data.markers_count}`);
+        alert(`Event markers parsed successfully!\n${data.markers_count} markers found.`);
+      } else {
+        alert(`Failed to parse event markers: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error parsing event markers:', error);
+      alert('Error parsing event markers. Please try again.');
+    } finally {
+      setParsingEventMarkers(false);
+    }
   };
 
   useEffect(() => {
@@ -1395,24 +1508,39 @@ useEffect(() => {
   }, [currentSession]);
 
   useEffect(() => {
-      if (!currentSession || showSetupForm) return;
+    if (!currentSession || showSetupForm) return;
 
-      const handleBeforeUnload = (event) => {
-        const message = 'Are you sure you want to leave? Closing this window will abandon the experiment session and disconnect from participants.';
-        event.preventDefault();
-        event.returnValue = message; // For Chrome/Safari
-        return message; // For other browsers
-      };
+    const handleBeforeUnload = (event) => {
+      const message = 'Are you sure you want to leave? Closing this window will end the experiment session.';
+      event.preventDefault();
+      event.returnValue = message;
+      return message;
+    };
 
-      window.addEventListener('beforeunload', handleBeforeUnload);
+    const handleUnload = () => {
+      const cleanupData = JSON.stringify({
+        session_id: currentSession,
+        timestamp: new Date().toISOString()
+      });
+      
+      navigator.sendBeacon(
+        `http://localhost:5001/api/sessions/${currentSession}/cleanup-experimenter`,
+        cleanupData
+      );
+      
+      console.log('Cleanup beacon sent for session:', currentSession);
+    };
 
-      return () => {
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-      };
-    }, [currentSession, showSetupForm]);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+    };
+  }, [currentSession, showSetupForm]);
 
   useEffect(() => {
-    // Auto-open tool panel for procedures that need experimenter control
     if (experimentData && experimentData.procedures && experimentData.procedures[currentProcedure]) {
       const procedure = experimentData.procedures[currentProcedure];
       
@@ -1422,6 +1550,28 @@ useEffect(() => {
       }
     }
   }, [currentProcedure, experimentData]);
+
+  useEffect(() => {
+    if (!currentSession || showSetupForm) return;
+    
+    const sendHeartbeat = async () => {
+      try {
+        await fetch(`/api/sessions/${currentSession}/heartbeat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        console.error('Heartbeat failed:', error);
+        // Don't spam console on network errors
+      }
+    };
+    
+    sendHeartbeat();
+    
+    const heartbeatInterval = setInterval(sendHeartbeat, 5000);
+    
+    return () => clearInterval(heartbeatInterval);
+  }, [currentSession, showSetupForm]);
 
   // Shared functions
   const loadAudioDevices = async () => {
@@ -1548,18 +1698,14 @@ useEffect(() => {
 
       const data = await response.json();
 
-      // Check for warnings (device not found but can continue)
       if (data.warning) {
         alert(`WARNING: ${data.message}\n\nYou can continue the experiment, but respiratory data will not be collected.\n\nPlease check your hardware connection and try again if needed.`);
-        // Don't set running state if device wasn't found
         setVernierRunning(false);
       } else if (data.success) {
-        // Device successfully started/stopped
-        setVernierRunning(newState);
-        console.log(`Vernier stream ${newState ? 'started' : 'stopped'}`);
-        console.log('Server response:', data.message || data);
+          setVernierRunning(newState);
+          console.log(`Vernier stream ${newState ? 'started' : 'stopped'}`);
+          console.log('Server response:', data.message || data);
       } else {
-        // Critical error
         throw new Error(data.error || 'Unknown error occurred');
       }
       
@@ -1588,18 +1734,14 @@ useEffect(() => {
 
       const data = await response.json();
 
-      // Check for warnings (device not found but can continue)
       if (data.warning) {
         alert(`WARNING: ${data.message}\n\nYou can continue the experiment, but heart rate data will not be collected.\n\nPlease check that:\n• The Polar H10 is powered on\n• The device is within Bluetooth range\n• The device is not connected to another device\n\nThen try again if needed.`);
-        // Don't set running state if device wasn't found
         setPolarRunning(false);
       } else if (data.success) {
-        // Device successfully started/stopped
-        setPolarRunning(newState);
-        console.log(`Polar HR ${newState ? 'started' : 'stopped'}`);
-        console.log('Server response:', data.message || data);
+          setPolarRunning(newState);
+          console.log(`Polar HR ${newState ? 'started' : 'stopped'}`);
+          console.log('Server response:', data.message || data);
       } else {
-        // Critical error
         throw new Error(data.error || 'Unknown error occurred');
       }
       
@@ -1923,7 +2065,6 @@ useEffect(() => {
         }
         
         window.close();
-        
         // Fallback: if window.close() doesn't work (some browsers block it),
         // redirect to a "close this window" page
         setTimeout(() => {
@@ -2115,6 +2256,14 @@ useEffect(() => {
         onChange={selectEmotibitFile}
         className="emotibit-file-input-hidden"
         id="main-emotibit-file-input"
+        style={{ display: 'none' }}
+      />
+      <input
+        type="file"
+        accept=".csv"
+        onChange={parseEventMarkerFile}
+        className="emotibit-file-input-hidden"
+        id="event-marker-file-input"
         style={{ display: 'none' }}
       />
       <header className="experimenter-header">
@@ -2329,8 +2478,26 @@ useEffect(() => {
         className="complete-experiment-btn"
       > 
         Import EmotiBit File 
-      </button><br />
-      
+      </button>
+
+      <button
+        onClick={launchEmotibitDataParser}
+        className="complete-experiment-btn"
+        disabled={!emotibitDataImported}
+        style={{ marginTop: '10px' }}
+      >
+        Open DataParser
+      </button>
+
+      <button
+        onClick={openEventMarkerFilePicker}
+        className="import-emotibit-btn"
+        disabled={!emotibitDataImported || parsingEventMarkers}
+        style={{ marginTop: '10px' }}
+      >
+        {parsingEventMarkers ? 'Parsing...' : 'Parse Event Marker File'}
+      </button>
+
       {uploadEmotibitStatus && (
         <div className="emotibit-upload-status" style={{ margin: '10px 0' }}>
           {uploadEmotibitStatus}
@@ -2340,6 +2507,12 @@ useEffect(() => {
       {emotibitFilePath && (
         <div className="emotibit-file-path" style={{ margin: '10px 0', fontSize: '0.9em' }}>
           {emotibitFilePath}
+        </div>
+      )}
+
+      {eventMarkerFilePath && (
+        <div className="emotibit-file-path" style={{ margin: '10px 0', fontSize: '0.9em', backgroundColor: '#d4edda' }}>
+          {eventMarkerFilePath}
         </div>
       )}
 
@@ -2415,6 +2588,11 @@ useEffect(() => {
         allowEventMarkers={participantRegistered}
         launchSubjectInterface={launchSubjectInterface}
         currentSession={currentSession}
+        emotibitDataImported={emotibitDataImported}
+        parsingEventMarkers={parsingEventMarkers}
+        eventMarkerFilePath={eventMarkerFilePath}
+        launchEmotibitDataParser={launchEmotibitDataParser}
+        openEventMarkerFilePicker={openEventMarkerFilePicker}
         emotiBitRunning={emotiBitRunning}
         vernierRunning={vernierRunning}
         polarRunning={polarRunning}
@@ -2446,9 +2624,15 @@ useEffect(() => {
           allowEventMarkers={participantRegistered}
           currentSession={currentSession}
           experimentData={experimentData}
+          emotibitDataImported={emotibitDataImported}
+          parsingEventMarkers={parsingEventMarkers}
+          eventMarkerFilePath={eventMarkerFilePath}
+          launchEmotibitDataParser={launchEmotibitDataParser}
+          openEventMarkerFilePicker={openEventMarkerFilePicker}
           emotiBitLoading={emotiBitLoading}
           vernierLoading={vernierLoading}
           polarLoading={polarLoading}
+
           // Shared state
           emotiBitRunning={emotiBitRunning}
           vernierRunning={vernierRunning}

@@ -181,6 +181,118 @@ def launch_emotibit_parser():
             "error": str(e)
         }), 500
 
+@app.route('/api/parse-event-markers', methods=['POST'])
+def parse_event_markers():
+    """
+    Parse LSL markers from EmotiBit ground truth CSV file.
+    Looks for the most recent ground truth file in the subject's directory.
+    """
+    global event_manager, subject_manager
+    
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ACTIVE_SESSIONS:
+            return jsonify({'error': 'Invalid or missing session ID'}), 400
+        
+        session_data = ACTIVE_SESSIONS[session_id]
+        subject_dir = session_data.get('subject_dir')
+        
+        if not subject_dir or not os.path.exists(subject_dir):
+            return jsonify({'error': 'Subject directory not found'}), 400
+        
+        # Find the most recent ground truth CSV file
+        ground_truth_files = [
+            f for f in os.listdir(subject_dir) 
+            if f.endswith('_emotibit_ground_truth.csv')
+        ]
+        
+        if not ground_truth_files:
+            return jsonify({'error': 'No EmotiBit ground truth file found. Please import EmotiBit data first.'}), 400
+        
+        # Sort by modification time and get the most recent
+        ground_truth_files.sort(
+            key=lambda f: os.path.getmtime(os.path.join(subject_dir, f)), 
+            reverse=True
+        )
+        ground_truth_file = os.path.join(subject_dir, ground_truth_files[0])
+        
+        # Parse the file for LSL markers
+        markers = []
+        with open(ground_truth_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                # Skip comment lines
+                if line.startswith(('%', '#')):
+                    continue
+                
+                parts = line.strip().split(',')
+                if len(parts) < 7:
+                    continue
+                
+                # Check if this is an LSL marker line (type code 'LM')
+                if parts[3] == 'LM':
+                    # Parse the payload key-value pairs
+                    payload = {}
+                    for i in range(6, len(parts) - 1, 2):
+                        if i + 1 < len(parts):
+                            key = parts[i].strip()
+                            value = parts[i + 1].strip()
+                            if key and value:
+                                payload[key] = value
+                    
+                    # If we found marker data, add it to our list
+                    if 'LD' in payload:
+                        markers.append({
+                            'EmotiBitTimestamp': int(parts[0]),
+                            'PacketNumber': int(parts[1]),
+                            'LslLocalTimestamp': float(payload.get('LC', 0)),
+                            'LslMarkerSourceTimestamp': float(payload.get('LM', 0)),
+                            'LslMarkerRxTimestamp': float(payload.get('LR', 0)),
+                            'MarkerData': payload['LD']
+                        })
+        
+        if not markers:
+            return jsonify({
+                'success': False,
+                'error': 'No LSL markers found in the ground truth file'
+            }), 400
+        
+        # Create output filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        subject_id = subject_manager.subject_id or 'unknown'
+        output_filename = f"{timestamp}_{subject_id}_emotibit_event_markers.csv"
+        output_filepath = os.path.join(subject_dir, output_filename)
+        
+        # Write markers to CSV
+        import csv
+        with open(output_filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            if markers:
+                fieldnames = markers[0].keys()
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(markers)
+        
+        print(f"Parsed {len(markers)} event markers from {ground_truth_files[0]}")
+        print(f"Saved to: {output_filepath}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Event markers parsed successfully',
+            'markers_count': len(markers),
+            'file_path': output_filepath,
+            'source_file': ground_truth_files[0]
+        }), 200
+        
+    except Exception as e:
+        print(f"Error parsing event markers: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': f'Failed to parse event markers: {str(e)}'
+        }), 500
+          
 @app.route('/api/manager-status', methods=['GET'])
 def get_manager_status():
     """Get the running status of all managers"""
