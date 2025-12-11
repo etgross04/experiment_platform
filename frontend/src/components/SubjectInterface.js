@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './SubjectInterface.css';
 import { startRecording, setEventMarker } from './utils/helpers';
 import MATComponent from './procedures/MATComponent';
@@ -179,11 +179,41 @@ function SubjectInterface() {
   // Cleanup states
   const [sessionTerminated, setSessionTerminated] = useState(false);
   const [restoredState, setRestoredState] = useState(false);
+  const [experimentCompleteForSubject, setExperimentCompleteForSubject] = useState(false);
+
+  const isExperimentCompleteForSubject = useCallback(() => {
+    if (!experimentData || !experimentData.procedures) return false;
+    
+    const filteredProcedures = experimentData.procedures.filter(
+      procedure => procedure.id !== 'consent' && 
+                  procedure.id !== 'data-collection' && 
+                  !procedure.name?.toLowerCase().includes('consent')
+    );
+    
+    if (filteredProcedures.length === 0) return false;
+    
+    const lastProcedureIndex = experimentData.procedures.findIndex(
+      proc => proc === filteredProcedures[filteredProcedures.length - 1]
+    );
+    
+    return currentProcedureIndex > lastProcedureIndex;
+  }, [experimentData, currentProcedureIndex]);
 
   useEffect(() => {
     if (!sessionId || consentMode) return;
+
+    if (isExperimentCompleteForSubject()) {
+      setExperimentCompleteForSubject(true);
+      setCurrentTask('completed');
+      console.log('Experiment complete for subject - stopping session checks');
+      return; 
+    }
     
     const checkSessionActive = async () => {
+      if (experimentCompleteForSubject) {
+        return;
+      }
+      
       try {
         const response = await fetch(`/api/sessions/${sessionId}/check-active`);
         const data = await response.json();
@@ -200,7 +230,8 @@ function SubjectInterface() {
           return;
         }
         
-        if (data.current_procedure !== undefined) {
+        // Only restore state if experiment is not complete for subject
+        if (data.current_procedure !== undefined && !isExperimentCompleteForSubject()) {
           console.log('Restoring session state:', {
             current_procedure: data.current_procedure,
             completed_procedures: data.completed_procedures
@@ -220,11 +251,11 @@ function SubjectInterface() {
     };
     
     checkSessionActive();
-  
+
     const checkInterval = setInterval(checkSessionActive, 30000);
     
     return () => clearInterval(checkInterval);
-  }, [sessionId, experimentData, consentMode]);
+  }, [sessionId, experimentData, consentMode, experimentCompleteForSubject, isExperimentCompleteForSubject]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
