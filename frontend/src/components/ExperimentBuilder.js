@@ -1205,30 +1205,17 @@ function ExperimentCanvas({
                           Audio Enabled
                         </span>
                       )}
-                      {procedure.platform && (
-                        <span style={{
-                          marginLeft: '0.5rem',
-                          fontSize: '0.7rem',
-                          color: '#7c3aed',
-                          background: '#ede9fe',
-                          padding: '0.125rem 0.375rem',
-                          borderRadius: '0.25rem',
-                          fontWeight: '500'
-                        }}>
-                          {procedure.platform}
-                        </span>
-                      )}
                     </div>
                   </div>
                   <div className="procedure-info">
                     <span className="duration-display">
                       {procedure.customDuration || procedure.duration} min
                     </span>
-                    {/* <span className={`config-status ${
-                      Object.keys(procedure.configuration || {}).length > 0 ? 'configured' : 'not-configured'
-                    }`}>
-                      {Object.keys(procedure.configuration || {}).length > 0 ? '✅ Configured' : '⚙️ Needs setup'}
-                    </span> */}
+                    {Object.keys(procedure.configuration || {}).length > 0 && (
+                      <span className="config-status-badge">
+                        ✓ Configured
+                      </span>
+                    )}
                   </div>
                   <span className="drag-handle">⠿</span>
                 </div>
