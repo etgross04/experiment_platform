@@ -1726,3 +1726,21 @@
   box-shadow: none;
   
 }
+
+.config-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  /* background: #d1fae5; */
+  color: #065f46;
+  border-radius: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 500;
+  margin-left: 1rem;
+}
+
+.design-procedure.consent-sticky .config-status-badge {
+  /* background: #dbeafe; */
+  color: #1e40af;
+}

@@ -1428,14 +1428,14 @@ useEffect(() => {
       return true;
     }
 
-    if (proc.configuration?.["task-description"]?.selectedTasks) {
-      const tasks = proc.configuration["task-description"].selectedTasks;
-      console.log('  task-description tasks:', tasks);
-      if (tasks.some(task => task.includes('Audio'))) {
-        console.log('  AUDIO NEEDED: task-description contains Audio');
-        return true;
-      }
-    }
+    // if (proc.configuration?.["task-description"]?.selectedTasks) {
+    //   const tasks = proc.configuration["task-description"].selectedTasks;
+    //   console.log('  task-description tasks:', tasks);
+    //   if (tasks.some(task => task.includes('Audio'))) {
+    //     console.log('  AUDIO NEEDED: task-description contains Audio');
+    //     return true;
+    //   }
+    // }
     
     if (proc.wizardData?.recordingDuration || proc.id === 'baseline-recording') {
       console.log('  AUDIO NEEDED: wizardData.recordingDuration or baseline-recording');

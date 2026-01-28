@@ -93,7 +93,7 @@ session_completions = {}
 # heartbeat monitoring
 experimenter_heartbeats = {}  # {session_id: last_heartbeat_timestamp}
 cleanup_lock = threading.Lock()
-HEARTBEAT_TIMEOUT = 15 
+HEARTBEAT_TIMEOUT = 60
 HEARTBEAT_GRACE_ATTEMPTS = 3  
 SHUTDOWN_FLAG = threading.Event()
 heartbeat_monitor_thread = None
@@ -459,6 +459,111 @@ def upload_survey():
     
     return jsonify({'success': True, 'filename': filename})
 
+@app.route('/api/upload-main-task-audio', methods=['POST'])
+def upload_main_task_audio():
+    """Upload audio files for main task procedure"""
+    try:
+        if 'audioFiles' not in request.files:
+            return jsonify({'success': False, 'error': 'No files provided'}), 400
+        
+        question_set_name = request.form.get('questionSetName', '').strip()
+        if not question_set_name:
+            return jsonify({'success': False, 'error': 'Question set name is required'}), 400
+        
+        question_set_name = "".join(c for c in question_set_name if c.isalnum() or c in ('_', '-')).lower()
+        
+        audio_dir = os.path.join('static', 'audio_files', 'main_task_audio', question_set_name)
+        os.makedirs(audio_dir, exist_ok=True)
+        
+        files = request.files.getlist('audioFiles')
+        uploaded_files = []
+        
+        has_intro = False
+        has_pre_questions = False
+        has_questions = False
+        has_wait = False
+        
+        for file in files:
+            if file.filename == '':
+                continue
+            
+            filename = secure_filename(file.filename)
+            
+            if filename.startswith('1-') and 'intro' in filename.lower():
+                has_intro = True
+            elif filename.startswith('2-') and 'pre' in filename.lower():
+                has_pre_questions = True
+            elif 'question_' in filename.lower():
+                has_questions = True
+            elif 'wait_for_instructions' in filename.lower():
+                has_wait = True
+            
+            filepath = os.path.join(audio_dir, filename)
+            file.save(filepath)
+            uploaded_files.append(filename)
+        
+        if not (has_intro and has_pre_questions and has_questions and has_wait):
+            return jsonify({
+                'success': False,
+                'error': 'Missing required files. Please ensure you have: 1-Intro, 2-PreQuestions, Question files, and Wait_For_Instructions'
+            }), 400
+        
+        print(f"Uploaded {len(uploaded_files)} files to {audio_dir}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully uploaded {len(uploaded_files)} files',
+            'questionSetName': question_set_name,
+            'files': uploaded_files
+        })
+        
+    except Exception as e:
+        print(f"Upload error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+    
+@app.route('/api/main-task-audio/<question_set>', methods=['GET'])
+def get_main_task_audio_files(question_set):
+    """Get list of audio files for a specific main task question set"""
+    try:
+        audio_dir = os.path.join('static', 'audio_files', 'main_task_audio', question_set)
+        
+        if not os.path.exists(audio_dir):
+            return jsonify({
+                'success': False,
+                'error': f'Audio directory not found: {audio_dir}'
+            }), 404
+        
+        # Get all mp3/wav files
+        all_files = [f for f in os.listdir(audio_dir) 
+                     if f.endswith(('.mp3', '.wav'))]
+        
+        # Sort files by numeric prefix
+        def get_sort_key(filename):
+            match = re.match(r'^(\d+)-', filename)
+            if match:
+                return int(match.group(1))
+            # Put wait file last
+            if 'wait' in filename.lower():
+                return 9999
+            return 0
+        
+        all_files.sort(key=get_sort_key)
+        
+        return jsonify({
+            'success': True,
+            'files': all_files,
+            'question_set': question_set
+        })
+        
+    except Exception as e:
+        print(f"Error getting audio files for {question_set}: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to get audio files: {str(e)}'
+        }), 500
+    
 @app.route('/set_event_marker', methods=['POST'])
 def set_event_marker():
     """Set event marker for the event manager"""
@@ -2746,7 +2851,6 @@ def experimenter_heartbeat(session_id):
         }
     return jsonify({'success': True})
 
-
 @app.route('/api/sessions/<session_id>/cleanup-experimenter', methods=['POST'])
 def cleanup_experimenter_session(session_id):
     """
@@ -2879,8 +2983,6 @@ def check_stale_sessions():
     Background thread to check for stale sessions where experimenter closed without cleanup.
     Uses grace period to avoid false positives.
     """
-    print("Heartbeat monitor started")
-    
     while not SHUTDOWN_FLAG.is_set():
         try:
             current_time = time.time()

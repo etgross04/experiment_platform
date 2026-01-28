@@ -1,42 +1,3 @@
-/**
- * MainTaskComponent
- * 
- * This React component manages the automated sequence for a "Room Observation Task" procedure.
- * It handles audio playback, timed observation, automatic recording, and phase transitions for the main task.
- * The component supports both experimenter and subject modes, with experimenter mode providing more granular controls.
- * 
- * Props:
- * @param {string} questionSet - The question set to use ('main_task_1', 'main_task_2', 'main_task_3'). Defaults to 'main_task_1'.
- * @param {Object} procedure - The procedure configuration object containing condition markers and wizard data.
- * @param {string} sessionId - The current session identifier.
- * @param {Function} onTaskComplete - Callback function invoked when the task is completed.
- * @param {boolean} isExperimenterMode - If true, renders experimenter controls and audio players. Defaults to false.
- * 
- * State:
- * - currentPhase: Tracks the current phase of the task ('intro', 'observation', 'instructions', 'question1', 'question2', 'wait', 'completed').
- * - isRecording: Indicates if audio recording is in progress.
- * - recordingStatus: Status message for recording and phase transitions.
- * - observationTimeLeft: Countdown timer for the observation phase.
- * - eventMarker: Marker for the current event, used for recording and logging.
- * - condition: Condition marker for the current task, used for logging and recording.
- * 
- * Features:
- * - Automated audio playback for each phase.
- * - Timed observation and question response periods.
- * - Automatic start/stop of audio recording with beeps for notifications.
- * - Experimenter mode with manual audio controls.
- * - Cleanup of timers and intervals on component unmount.
- * 
- * Usage:
- * <MainTaskComponent
- *   questionSet="main_task_1"
- *   procedure={procedureObject}
- *   sessionId="abc123"
- *   onTaskComplete={handleComplete}
- *   isExperimenterMode={true}
- * />
- */
-
 import React, { useState, useEffect, useRef } from 'react';
 import { recordTaskAudio, startRecording, playBeep, setCondition, setEventMarker } from '../utils/helpers.js';
 import './MainTaskComponent.css';
@@ -53,22 +14,52 @@ const MainTaskComponent = ({
   
   // State management
   const [isRecording, setIsRecording] = useState(false);
-  const [currentPhase, setCurrentPhase] = useState('intro'); 
+  const [currentPhase, setCurrentPhase] = useState('intro');
   const [recordingStatus, setRecordingStatus] = useState('');
   const [observationTimeLeft, setObservationTimeLeft] = useState(60);
   const [eventMarker, setEventMarkerState] = useState('');
   const [condition, setConditionState] = useState('None');
+  const [audioFiles, setAudioFiles] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const introAudioRef = useRef(null);
-  const instructionsAudioRef = useRef(null);
-  const question1AudioRef = useRef(null);
-  const question2AudioRef = useRef(null);
-  const waitAudioRef = useRef(null);
+  // Audio refs
+  const audioRefs = useRef({});
   const observationTimerRef = useRef(null);
   const recordingTimeoutRef = useRef(null);
   const beepTimeoutRef = useRef(null);
   
   const AUDIO_DIR = `/audio_files/main_task_audio/${selectedQuestionSet}/`;
+
+  // Load available audio files
+  useEffect(() => {
+    const loadAudioFiles = async () => {
+      try {
+        const response = await fetch(`/api/main-task-audio/${selectedQuestionSet}`);
+        const data = await response.json();
+        
+        if (data.success) {
+          // Categorize files
+          const files = {
+            intro: data.files.find(f => f.startsWith('1-') && f.toLowerCase().includes('intro')),
+            preQuestions: data.files.find(f => f.startsWith('2-') && f.toLowerCase().includes('pre')),
+            questions: data.files.filter(f => f.toLowerCase().includes('question_')).sort(),
+            wait: data.files.find(f => f.toLowerCase().includes('wait_for_instructions'))
+          };
+          
+          console.log('Loaded audio files:', files);
+          setAudioFiles(files);
+        } else {
+          console.error('Failed to load audio files:', data.error);
+        }
+      } catch (error) {
+        console.error('Error loading audio files:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadAudioFiles();
+  }, [selectedQuestionSet]);
 
   useEffect(() => {
     let taskCondition = 'main_task';
@@ -89,26 +80,33 @@ const MainTaskComponent = ({
     console.log('MainTask initialized with condition:', taskCondition, 'event marker:', taskEventMarker, 'question set:', selectedQuestionSet);
   }, [procedure, selectedQuestionSet]);
 
+  const playAudio = (audioType, onEndedCallback) => {
+    const ref = audioRefs.current[audioType];
+    if (ref) {
+      ref.load();
+      ref.play()
+        .then(() => console.log(`Playing ${audioType}`))
+        .catch(err => console.error(`Error playing ${audioType}:`, err));
+      
+      if (onEndedCallback) {
+        ref.onended = onEndedCallback;
+      }
+    }
+  };
+
   const handleIntroEnd = () => {
     console.log("Intro finished, starting 60-second observation period...");
     setCurrentPhase('observation');
     setRecordingStatus('60 second observation timer started...');
     
-    // Start 60-second countdown
     observationTimerRef.current = setInterval(() => {
       setObservationTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(observationTimerRef.current);
-          console.log("Observation complete, auto-playing instructions...");
-          setCurrentPhase('instructions');
-          // Auto-play instructions after a short delay
+          console.log("Observation complete, auto-playing pre-questions...");
+          setCurrentPhase('preQuestions');
           setRecordingStatus(' ');
-          setTimeout(() => {
-            if (instructionsAudioRef.current) {
-              instructionsAudioRef.current.load();
-              instructionsAudioRef.current.play().catch(console.error);
-            }
-          }, 500);
+          setTimeout(() => playAudio('preQuestions', handlePreQuestionsEnd), 500);
           return 0;
         }
         return prev - 1;
@@ -116,16 +114,10 @@ const MainTaskComponent = ({
     }, 1000);
   };
 
-  const handleInstructionsEnd = () => {
-    console.log("Instructions finished, auto-playing Question 1...");
+  const handlePreQuestionsEnd = () => {
+    console.log("Pre-questions finished, auto-playing first question...");
     setCurrentPhase('question1');
-    // Auto-play Q1 after a short delay
-    setTimeout(() => {
-      if (question1AudioRef.current) {
-        question1AudioRef.current.load();
-        question1AudioRef.current.play().catch(console.error);
-      }
-    }, 500);
+    setTimeout(() => playAudio('question1', handleQuestion1End), 500);
   };
 
   const handleQuestion1End = () => {
@@ -146,17 +138,15 @@ const MainTaskComponent = ({
       const emarker = `${eventMarker}_${questionType}`;
       setEventMarker(emarker);
       startRecording();
-      playBeep(); 
+      playBeep();
       
       console.log(`Recording started for ${questionType}`);
 
-      // 15-second warning beeps (at 75 seconds)
       beepTimeoutRef.current = setTimeout(() => {
         playBeep();
-        setTimeout(playBeep, 500); 
+        setTimeout(playBeep, 500);
       }, 75000);
 
-      // Stop recording after 90 seconds
       recordingTimeoutRef.current = setTimeout(() => {
         stopRecordingForQuestion(questionType);
       }, 90000);
@@ -183,25 +173,14 @@ const MainTaskComponent = ({
       clearTimeout(beepTimeoutRef.current);
     }
     
-    // Move to next phase and auto-play
     if (questionType === 'question1') {
       console.log("Recording 1 complete, auto-playing Question 2...");
       setCurrentPhase('question2');
-      setTimeout(() => {
-        if (question2AudioRef.current) {
-          question2AudioRef.current.load();
-          question2AudioRef.current.play().catch(console.error);
-        }
-      }, 500);
+      setTimeout(() => playAudio('question2', handleQuestion2End), 500);
     } else if (questionType === 'question2') {
       console.log("Recording 2 complete, auto-playing wait instructions...");
       setCurrentPhase('wait');
-      setTimeout(() => {
-        if (waitAudioRef.current) {
-          waitAudioRef.current.load();
-          waitAudioRef.current.play().catch(console.error);
-        }
-      }, 500);
+      setTimeout(() => playAudio('wait', handleWaitInstructionsEnd), 500);
     }
   };
 
@@ -235,48 +214,43 @@ const MainTaskComponent = ({
     };
   }, []);
 
+  if (loading || !audioFiles) {
+    return (
+      <div className="main-task-component">
+        <p>Loading audio files...</p>
+      </div>
+    );
+  }
+
   if (isExperimenterMode) {
     return (
       <div className="main-task-experimenter-control">
-        <audio 
-          ref={introAudioRef}
-          onEnded={handleIntroEnd}
-          style={{ display: 'none' }}
-        >
-          <source src={`${AUDIO_DIR}1-Task1-Intro.mp3`} type="audio/mpeg" />
-        </audio>
-        
-        <audio 
-          ref={instructionsAudioRef}
-          onEnded={handleInstructionsEnd}
-          style={{ display: 'none' }}
-        >
-          <source src={`${AUDIO_DIR}2-Task1-PostObservation.mp3`} type="audio/mpeg" />
-        </audio>
-        
-        <audio 
-          ref={question1AudioRef}
-          onEnded={handleQuestion1End}
-          style={{ display: 'none' }}
-        >
-          <source src={`${AUDIO_DIR}3-Task1-Q1.mp3`} type="audio/mpeg" />
-        </audio>
-        
-        <audio 
-          ref={question2AudioRef}
-          onEnded={handleQuestion2End}
-          style={{ display: 'none' }}
-        >
-          <source src={`${AUDIO_DIR}4-Task1-Q2.mp3`} type="audio/mpeg" />
-        </audio>
-        
-        <audio 
-          ref={waitAudioRef}
-          onEnded={handleWaitInstructionsEnd}
-          style={{ display: 'none' }}
-        >
-          <source src={`${AUDIO_DIR}Wait_For_Instructions.mp3`} type="audio/mpeg" />
-        </audio>
+        {/* Create audio elements dynamically */}
+        {audioFiles.intro && (
+          <audio ref={el => audioRefs.current.intro = el} style={{ display: 'none' }}>
+            <source src={`${AUDIO_DIR}${audioFiles.intro}`} type="audio/mpeg" />
+          </audio>
+        )}
+        {audioFiles.preQuestions && (
+          <audio ref={el => audioRefs.current.preQuestions = el} style={{ display: 'none' }}>
+            <source src={`${AUDIO_DIR}${audioFiles.preQuestions}`} type="audio/mpeg" />
+          </audio>
+        )}
+        {audioFiles.questions?.[0] && (
+          <audio ref={el => audioRefs.current.question1 = el} style={{ display: 'none' }}>
+            <source src={`${AUDIO_DIR}${audioFiles.questions[0]}`} type="audio/mpeg" />
+          </audio>
+        )}
+        {audioFiles.questions?.[1] && (
+          <audio ref={el => audioRefs.current.question2 = el} style={{ display: 'none' }}>
+            <source src={`${AUDIO_DIR}${audioFiles.questions[1]}`} type="audio/mpeg" />
+          </audio>
+        )}
+        {audioFiles.wait && (
+          <audio ref={el => audioRefs.current.wait = el} style={{ display: 'none' }}>
+            <source src={`${AUDIO_DIR}${audioFiles.wait}`} type="audio/mpeg" />
+          </audio>
+        )}
 
         <div className="main-task-status">
           <div className={`status-indicator ${isRecording ? 'recording' : ''}`}>
@@ -288,23 +262,23 @@ const MainTaskComponent = ({
                currentPhase === 'observation' ? `Observing (${observationTimeLeft}s)` :
                currentPhase === 'question1' ? 'Question 1' :
                currentPhase === 'question2' ? 'Question 2' :
-               currentPhase === 'instructions' ? 'Instructions' :
+               currentPhase === 'preQuestions' ? 'Pre-Questions' :
                'Introduction'}
             </span>
           </div>
         </div>
 
         <div className="main-task-controls">
-          {currentPhase === 'intro' && (
+          {currentPhase === 'intro' && audioFiles.intro && (
             <div className="intro-control">
               <label>Introduction Audio:</label>
               <audio 
-                ref={introAudioRef}
+                ref={el => audioRefs.current.intro = el}
                 controls
                 onEnded={handleIntroEnd}
                 className="audio-control"
               >
-                <source src={`${AUDIO_DIR}1-Task1-Intro.mp3`} type="audio/mpeg" />
+                <source src={`${AUDIO_DIR}${audioFiles.intro}`} type="audio/mpeg" />
               </audio>
             </div>
           )}
@@ -313,68 +287,64 @@ const MainTaskComponent = ({
             <div className="observation-control">
               <label>Observation Period:</label>
               <div className="observation-timer-display">
-                <div className="timer-count">
-                  {observationTimeLeft}s
-                </div>
-                <div className="timer-text">
-                  Observation time remaining
-                </div>
+                <div className="timer-count">{observationTimeLeft}s</div>
+                <div className="timer-text">Observation time remaining</div>
               </div>
             </div>
           )}
 
-          {currentPhase === 'instructions' && (
+          {currentPhase === 'preQuestions' && audioFiles.preQuestions && (
             <div className="instructions-control">
-              <label>Instructions:</label>
+              <label>Pre-Questions Instructions:</label>
               <audio 
-                ref={instructionsAudioRef}
+                ref={el => audioRefs.current.preQuestions = el}
                 controls
-                onEnded={handleInstructionsEnd}
+                onEnded={handlePreQuestionsEnd}
                 className="audio-control"
               >
-                <source src={`${AUDIO_DIR}2-Task1-PostObservation.mp3`} type="audio/mpeg" />
+                <source src={`${AUDIO_DIR}${audioFiles.preQuestions}`} type="audio/mpeg" />
               </audio>
             </div>
           )}
 
-          {currentPhase === 'question1' && (
+          {currentPhase === 'question1' && audioFiles.questions?.[0] && (
             <div className="question-control">
               <label>Question 1:</label>
               <audio 
-                ref={question1AudioRef}
+                ref={el => audioRefs.current.question1 = el}
                 controls
                 onEnded={handleQuestion1End}
                 className="audio-control"
               >
-                <source src={`${AUDIO_DIR}3-Task1-Q1.mp3`} type="audio/mpeg" />
+                <source src={`${AUDIO_DIR}${audioFiles.questions[0]}`} type="audio/mpeg" />
               </audio>
             </div>
           )}
 
-          {currentPhase === 'question2' && (
+          {currentPhase === 'question2' && audioFiles.questions?.[1] && (
             <div className="question-control">
               <label>Question 2:</label>
               <audio 
-                ref={question2AudioRef}
+                ref={el => audioRefs.current.question2 = el}
                 controls
                 onEnded={handleQuestion2End}
                 className="audio-control"
               >
-                <source src={`${AUDIO_DIR}4-Task1-Q2.mp3`} type="audio/mpeg" />
+                <source src={`${AUDIO_DIR}${audioFiles.questions[1]}`} type="audio/mpeg" />
               </audio>
             </div>
           )}
 
-          {currentPhase === 'wait' && (
+          {currentPhase === 'wait' && audioFiles.wait && (
             <div className="wait-control">
               <label>Final Instructions:</label>
               <audio 
-                ref={waitAudioRef}
+                ref={el => audioRefs.current.wait = el}
                 controls
                 onEnded={handleWaitInstructionsEnd}
                 className="audio-control"
               >
-                <source src={`${AUDIO_DIR}Wait_For_Instructions.mp3`} type="audio/mpeg" />
+                <source src={`${AUDIO_DIR}${audioFiles.wait}`} type="audio/mpeg" />
               </audio>
             </div>
           )}
@@ -398,8 +368,31 @@ const MainTaskComponent = ({
     );
   }
 
+  // Subject mode rendering (full UI) - similar changes apply here
   return (
     <div className="main-task-component">
+      {/* Hidden audio elements */}
+      {audioFiles.intro && (
+        <audio ref={el => audioRefs.current.intro = el} style={{ display: 'none' }}>
+          <source src={`${AUDIO_DIR}${audioFiles.intro}`} type="audio/mpeg" />
+        </audio>
+      )}
+      {audioFiles.preQuestions && (
+        <audio ref={el => audioRefs.current.preQuestions = el} style={{ display: 'none' }}>
+          <source src={`${AUDIO_DIR}${audioFiles.preQuestions}`} type="audio/mpeg" />
+        </audio>
+      )}
+      {audioFiles.questions?.map((questionFile, idx) => (
+        <audio key={idx} ref={el => audioRefs.current[`question${idx + 1}`] = el} style={{ display: 'none' }}>
+          <source src={`${AUDIO_DIR}${questionFile}`} type="audio/mpeg" />
+        </audio>
+      ))}
+      {audioFiles.wait && (
+        <audio ref={el => audioRefs.current.wait = el} style={{ display: 'none' }}>
+          <source src={`${AUDIO_DIR}${audioFiles.wait}`} type="audio/mpeg" />
+        </audio>
+      )}
+
       <div className="procedure-header">
         <div className="procedure-title">
           <h2>Room Observation Task</h2>
@@ -429,7 +422,7 @@ const MainTaskComponent = ({
                   controls
                   onEnded={handleIntroEnd}
                 >
-                  <source src={`${AUDIO_DIR}1-Task1-Intro.mp3`} type="audio/mpeg" />
+                  <source src={`${AUDIO_DIR}${audioFiles.intro}`} type="audio/mpeg" />
                   Your browser does not support the audio element.
                 </audio>
               </div>
@@ -440,22 +433,18 @@ const MainTaskComponent = ({
             <div className="observation-section">
               <h3>Observation Period</h3>
               <div className="observation-timer">
-                <div className="timer-display">
-                  {observationTimeLeft}
-                </div>
+                <div className="timer-display">{observationTimeLeft}</div>
                 <div className="timer-label">seconds remaining</div>
               </div>
-              <div className="recording-status">
-                {recordingStatus}
-              </div>
+              <div className="recording-status">{recordingStatus}</div>
             </div>
           )}
 
-          {currentPhase === 'instructions' && (
+          {currentPhase === 'preQuestions' && (
             <div className="instructions-section">
               <h3>Instructions (Playing Automatically)</h3>
               <div className="auto-play-indicator">
-                <p>Playing: 2-Task1-PostObservation.mp3</p>
+                <p>Playing: {audioFiles.preQuestions}</p>
               </div>
             </div>
           )}
@@ -464,10 +453,8 @@ const MainTaskComponent = ({
             <div className="question-section">
               <h3>{currentPhase === 'question1' ? 'Question 1 (Playing Automatically)' : 'Question 2 (Playing Automatically)'}</h3>
               <div className="auto-play-indicator">
-                <p>Playing: {currentPhase === 'question1' ? '3-Task1-Q1.mp3' : '4-Task1-Q2.mp3'}</p>
-                <div className="recording-status">
-                  {recordingStatus}
-                </div>
+                <p>Playing: {currentPhase === 'question1' ? audioFiles.questions?.[0] : audioFiles.questions?.[1]}</p>
+                <div className="recording-status">{recordingStatus}</div>
               </div>
             </div>
           )}
@@ -476,7 +463,7 @@ const MainTaskComponent = ({
             <div className="wait-instructions">
               <h3>Final Instructions (Playing Automatically)</h3>
               <div className="auto-play-indicator">
-                <p>Playing: Wait_For_Instructions.mp3</p>
+                <p>Playing: {audioFiles.wait}</p>
               </div>
             </div>
           )}
@@ -501,7 +488,7 @@ const MainTaskComponent = ({
              currentPhase === 'observation' ? `Observation period (${observationTimeLeft}s remaining)` :
              currentPhase === 'question1' ? 'Question 1' :
              currentPhase === 'question2' ? 'Question 2' :
-             currentPhase === 'instructions' ? 'Playing instructions' :
+             currentPhase === 'preQuestions' ? 'Playing pre-questions instructions' :
              'Listen to introduction'}
           </span>
         </div>

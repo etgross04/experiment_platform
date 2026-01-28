@@ -180,6 +180,7 @@ function SubjectInterface() {
   const [sessionTerminated, setSessionTerminated] = useState(false);
   const [restoredState, setRestoredState] = useState(false);
   const [experimentCompleteForSubject, setExperimentCompleteForSubject] = useState(false);
+  const currentProcedureIndexRef = useRef(currentProcedureIndex);
 
   const isExperimentCompleteForSubject = useCallback(() => {
     if (!experimentData || !experimentData.procedures) return false;
@@ -198,6 +199,10 @@ function SubjectInterface() {
     
     return currentProcedureIndex > lastProcedureIndex;
   }, [experimentData, currentProcedureIndex]);
+
+  useEffect(() => {
+    currentProcedureIndexRef.current = currentProcedureIndex;
+  }, [currentProcedureIndex]);
 
   useEffect(() => {
     if (!sessionId || consentMode) return;
@@ -231,7 +236,9 @@ function SubjectInterface() {
         }
         
         // Only restore state if experiment is not complete for subject
-        if (data.current_procedure !== undefined && !isExperimentCompleteForSubject()) {
+        if (data.current_procedure !== undefined && 
+          data.current_procedure !== currentProcedureIndexRef.current && // <-- Use ref here
+            !isExperimentCompleteForSubject()) {
           console.log('Restoring session state:', {
             current_procedure: data.current_procedure,
             completed_procedures: data.completed_procedures

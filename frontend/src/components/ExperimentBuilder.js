@@ -868,6 +868,23 @@ function ExperimentCanvas({
 }) {
   const [draggedIndex, setDraggedIndex] = useState(null);
 
+  const isConfigured = (procedure) => {
+    if (!procedure.configuration || Object.keys(procedure.configuration).length === 0) {
+      return false;
+    }
+    
+    // Special check for data-collection procedure
+    if (procedure.id === 'data-collection') {
+      const methods = procedure.configuration['collection-methods'];
+      if (!methods) return false;
+      // Check if at least one method is enabled
+      return Object.values(methods).some(value => value === true);
+    }
+    
+    // For other procedures, check if configuration has meaningful data
+    return Object.keys(procedure.configuration).length > 0;
+  };
+
   // Auto-enable audio when procedures that need it are added
   useEffect(() => {
     const needsAudio = shouldAutoEnableAudio(selectedProcedures);
@@ -1211,7 +1228,7 @@ function ExperimentCanvas({
                     <span className="duration-display">
                       {procedure.customDuration || procedure.duration} min
                     </span>
-                    {Object.keys(procedure.configuration || {}).length > 0 && (
+                    {isConfigured(procedure) && (
                       <span className="config-status-badge">
                         ✓ Configured
                       </span>
@@ -1884,68 +1901,177 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
               ))}
             </div>
             
-            <label className="checkbox-label" style={{ marginTop: '1rem' }}>
+            {/* <label className="checkbox-label" style={{ marginTop: '1rem' }}>
               <input 
                 type="checkbox" 
                 checked={formData.enableDetailedInstructions || false}
                 onChange={(e) => handleInputChange('enableDetailedInstructions', e.target.checked)}
               />
               Show detailed instructions to participants
-            </label>
+            </label> */}
           </div>
         );
       } else if (procedureId === 'main-task'){
-        return (
-          <div className="form-group">
-            <label>Main Task Question Set</label>
-            <div className="radio-group">
-              {[
-                { value: 'main_task_1', label: 'Main Task 1 - Standard question set' },
-                { value: 'main_task_2', label: 'Main Task 2 - Alternative question set' },
-                { value: 'main_task_3', label: 'Main Task 3 - Extended question set' }
-              ].map(option => (
-                <label key={option.value} className="radio-label">
-                  <input 
-                    type="radio" 
-                    name="questionSet"
-                    value={option.value}
-                    checked={formData.questionSet === option.value}
-                    onChange={(e) => handleInputChange('questionSet', e.target.value)}
+          return (
+            <div className="form-group">
+              <label>Main Task Question Set</label>
+              <div className="radio-group">
+                {[
+                  { value: 'main_task_1', label: 'Main Task 1 - Standard question set' },
+                  { value: 'main_task_2', label: 'Main Task 2 - Alternative question set' },
+                  { value: 'main_task_3', label: 'Main Task 3 - Extended question set' }
+                ].map(option => (
+                  <label key={option.value} className="radio-label">
+                    <input 
+                      type="radio" 
+                      name="questionSet"
+                      value={option.value}
+                      checked={formData.questionSet === option.value}
+                      onChange={(e) => handleInputChange('questionSet', e.target.value)}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+              
+              {/* Audio File Upload Section */}
+              <div style={{ 
+                marginTop: '1.5rem', 
+                padding: '1rem', 
+                background: '#f0f9ff', 
+                border: '1px solid #0ea5e9',
+                borderRadius: '0.5rem' 
+              }}>
+                <h4 style={{ marginTop: 0 }}>Upload Custom Audio Files</h4>
+                <p style={{ fontSize: '0.875rem', color: '#0369a1', marginBottom: '1rem' }}>
+                  Upload a new set of audio files for this task. Files will be available as a new question set option.
+                </p>
+                
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                    Question Set Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g., main_task_4, custom_room_task"
+                    onChange={(e) => handleInputChange('customQuestionSetName', e.target.value)}
+                    value={formData.customQuestionSetName || ''}
+                    style={{ width: '100%', marginBottom: '0.5rem' }}
                   />
-                  {option.label}
-                </label>
-              ))}
-            </div>
-            
-            <label className="wizard-mt">Experimental Condition Marker *</label>
-            <input 
-              type="text"
-              placeholder="e.g., main_task_baseline, main_task_treatment_a, main_task_condition_1"
-              value={formData.conditionMarker || ''}
-              onChange={(e) => handleInputChange('conditionMarker', e.target.value)}
-              className="wizard-input-full wizard-mb-sm"
-            />
+                  <small style={{ color: '#64748b' }}>
+                    This name will identify your custom question set (use lowercase with underscores)
+                  </small>
+                </div>
+                
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                    Select Audio Files
+                  </label>
+                  <input
+                    type="file"
+                    accept=".mp3,.wav"
+                    multiple
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files);
+                      if (files.length === 0) return;
+                      
+                      const questionSetName = formData.customQuestionSetName;
+                      if (!questionSetName || !questionSetName.trim()) {
+                        alert('Please enter a question set name first');
+                        e.target.value = '';
+                        return;
+                      }
+                      
+                      const formDataObj = new FormData();
+                      formDataObj.append('questionSetName', questionSetName);
+                      files.forEach(file => {
+                        formDataObj.append('audioFiles', file);
+                      });
+                      
+                      try {
+                        const response = await fetch('/api/upload-main-task-audio', {
+                          method: 'POST',
+                          body: formDataObj
+                        });
+                        
+                        const result = await response.json();
+                        if (response.ok && result.success) {
+                          alert(`Successfully uploaded ${files.length} files to ${questionSetName}`);
+                          handleInputChange('questionSet', questionSetName);
+                        } else {
+                          alert(`Upload failed: ${result.error || 'Unknown error'}`);
+                        }
+                      } catch (error) {
+                        console.error('Upload error:', error);
+                        alert('Error uploading files. Please try again.');
+                      }
+                      
+                      e.target.value = '';
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                
+                <div style={{ 
+                  background: '#fef3c7', 
+                  padding: '0.75rem', 
+                  borderRadius: '0.375rem',
+                  border: '1px solid #f59e0b' 
+                }}>
+                  <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600', fontSize: '0.875rem' }}>
+                    Required File Naming Convention:
+                  </p>
+                  <ul style={{ 
+                    margin: 0, 
+                    paddingLeft: '1.5rem', 
+                    fontSize: '0.75rem',
+                    lineHeight: '1.5' 
+                  }}>
+                    <li><code>1-Intro.mp3</code> - Introduction audio</li>
+                    <li><code>2-PreQuestions.mp3</code> - Post-observation instructions</li>
+                    <li><code>3-Question_1.mp3</code> - First question</li>
+                    <li><code>4-Question_2.mp3</code> - Second question</li>
+                    <li><code>Wait_For_Instructions.mp3</code> - Final instructions</li>
+                  </ul>
+                  <p style={{ 
+                    margin: '0.5rem 0 0 0', 
+                    fontSize: '0.75rem', 
+                    fontStyle: 'italic' 
+                  }}>
+                    Files must be numbered sequentially. Question files must contain "Question_" in the filename.
+                  </p>
+                </div>
+              </div>
+              
+              <label className="wizard-mt">Experimental Condition Marker *</label>
+              <input 
+                type="text"
+                placeholder="e.g., main_task_baseline, main_task_treatment_a, main_task_condition_1"
+                value={formData.conditionMarker || ''}
+                onChange={(e) => handleInputChange('conditionMarker', e.target.value)}
+                className="wizard-input-full wizard-mb-sm"
+              />
             <small className="wizard-help-text-mb">
               This condition marker will be used to identify the experimental condition for this main task.
             </small>
 
-            <label className="checkbox-label wizard-mt">
+            {/* <label className="checkbox-label wizard-mt">
               <input 
                 type="checkbox" 
                 checked={formData.allowConditionOverride || false}
                 onChange={(e) => handleInputChange('allowConditionOverride', e.target.checked)}
               />
               Allow experimenter to override condition during test execution
-            </label>
+            </label> */}
             
-            <label className="checkbox-label" style={{ marginTop: '1rem' }}>
+            {/* <label className="checkbox-label" style={{ marginTop: '1rem' }}>
               <input 
                 type="checkbox" 
                 checked={formData.enableDetailedInstructions || false}
                 onChange={(e) => handleInputChange('enableDetailedInstructions', e.target.checked)}
               />
               Show detailed instructions to participants
-            </label>
+            </label> */}
           </div>
         );
       } else {
@@ -1993,23 +2119,23 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
               </ul>
             </div>
 
-            <label className="checkbox-label wizard-mt">
+            {/* <label className="checkbox-label wizard-mt">
               <input 
                 type="checkbox" 
                 checked={formData.allowConditionOverride || false}
                 onChange={(e) => handleInputChange('allowConditionOverride', e.target.checked)}
               />
               Allow experimenter to override condition during test execution
-            </label>
+            </label> */}
             
-            <label className="checkbox-label" style={{ marginTop: '1rem' }}>
+            {/* <label className="checkbox-label" style={{ marginTop: '1rem' }}>
               <input 
                 type="checkbox" 
                 checked={formData.enableDetailedInstructions || false}
                 onChange={(e) => handleInputChange('enableDetailedInstructions', e.target.checked)}
               />
               Show detailed instructions to participants
-            </label>
+            </label> */}
           </div>
         );
       }
@@ -2248,63 +2374,63 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
         </div>
       );
         
-    case 'task-description':
-      const taskTypes = ['Cognitive Task', 'Physical Task', 'VR Task', 'Audio Task'];
-      return (
-        <div className="form-group">
-          <label>Select Task</label>
-          {taskTypes.map(task => (
-            <label key={task} className="checkbox-label">
-              <input 
-                type="checkbox" 
-                checked={formData.selectedTasks?.includes(task) || false}
-                onChange={(e) => {
-                  const current = formData.selectedTasks || [];
-                  const updated = e.target.checked 
-                    ? [...current, task]
-                    : current.filter(t => t !== task);
-                  handleInputChange('selectedTasks', updated);
-                }}
-              />
-              {task}
-            </label>
-          ))}
+    // case 'task-description':
+    //   const taskTypes = ['Cognitive Task', 'Physical Task', 'VR Task', 'Audio Task'];
+    //   return (
+    //     <div className="form-group">
+    //       <label>Select Task</label>
+    //       {taskTypes.map(task => (
+    //         <label key={task} className="checkbox-label">
+    //           <input 
+    //             type="checkbox" 
+    //             checked={formData.selectedTasks?.includes(task) || false}
+    //             onChange={(e) => {
+    //               const current = formData.selectedTasks || [];
+    //               const updated = e.target.checked 
+    //                 ? [...current, task]
+    //                 : current.filter(t => t !== task);
+    //               handleInputChange('selectedTasks', updated);
+    //             }}
+    //           />
+    //           {task}
+    //         </label>
+    //       ))}
           
-          <label className="wizard-mt">Experimental Condition Marker *</label>
-          <input 
-            type="text"
-            placeholder="e.g., control, treatment, high_stress, low_stress"
-            value={formData.conditionMarker || ''}
-            onChange={(e) => handleInputChange('conditionMarker', e.target.value)}
-            className="wizard-input-full wizard-mb-sm"
-          />
-          <small className="wizard-help-text-mb">
-            This condition marker will be used to identify the experimental condition for this task. It will be passed to the setCondition function during experiment execution.
-          </small>
+    //       <label className="wizard-mt">Experimental Condition Marker *</label>
+    //       <input 
+    //         type="text"
+    //         placeholder="e.g., control, treatment, high_stress, low_stress"
+    //         value={formData.conditionMarker || ''}
+    //         onChange={(e) => handleInputChange('conditionMarker', e.target.value)}
+    //         className="wizard-input-full wizard-mb-sm"
+    //       />
+    //       <small className="wizard-help-text-mb">
+    //         This condition marker will be used to identify the experimental condition for this task. It will be passed to the setCondition function during experiment execution.
+    //       </small>
 
-          <div className="wizard-highlight-box">
-            <p><strong>Examples of condition markers:</strong></p>
-            <ul className="wizard-list-small">
-              <li><code className="wizard-code">control</code> - for control group participants</li>
-              <li><code className="wizard-code">treatment_A</code> - for first treatment condition</li>
-              <li><code className="wizard-code">high_cognitive_load</code> - for high difficulty tasks</li>
-              <li><code className="wizard-code">visual_stimuli</code> - for visual presentation conditions</li>
-            </ul>
-          </div>
+    //       <div className="wizard-highlight-box">
+    //         <p><strong>Examples of condition markers:</strong></p>
+    //         <ul className="wizard-list-small">
+    //           <li><code className="wizard-code">control</code> - for control group participants</li>
+    //           <li><code className="wizard-code">treatment_A</code> - for first treatment condition</li>
+    //           <li><code className="wizard-code">high_cognitive_load</code> - for high difficulty tasks</li>
+    //           <li><code className="wizard-code">visual_stimuli</code> - for visual presentation conditions</li>
+    //         </ul>
+    //       </div>
 
-          {/* <label className="checkbox-label wizard-mt">
-            <input 
-              type="checkbox" 
-              checked={formData.allowConditionOverride || false}
-              onChange={(e) => handleInputChange('allowConditionOverride', e.target.checked)}
-            />
-            Allow experimenter to override condition during test execution
-          </label>
-          <small className="wizard-help-text-mt">
-            When checked, experimenters can manually change the condition marker before starting this task.
-          </small> */}
-        </div>
-      );
+    //       {/* <label className="checkbox-label wizard-mt">
+    //         <input 
+    //           type="checkbox" 
+    //           checked={formData.allowConditionOverride || false}
+    //           onChange={(e) => handleInputChange('allowConditionOverride', e.target.checked)}
+    //         />
+    //         Allow experimenter to override condition during test execution
+    //       </label>
+    //       <small className="wizard-help-text-mt">
+    //         When checked, experimenters can manually change the condition marker before starting this task.
+    //       </small> */}
+    //     </div>
+    //   );
 
     // case 'sensors':
     //   const sensorTypes = ['Heart Rate (HR)', 'Electroencephalography (EEG)', 'Electrodermal Activity (EDA)', 'Respiration', 'Eye Tracking'];
