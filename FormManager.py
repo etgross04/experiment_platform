@@ -248,24 +248,26 @@ class FormManager:
 
     def customize_form_url(self, url, subject_id) -> str:
         """
-        Replaces 'Sample+ID' in various cases in a Google Forms URL with the provided subject_id.
+        Replaces 'SampleID' placeholder in a Google Forms URL with the provided subject_id.
         Parameters:
-        url (str): The Google Forms URL containing 'Sample+ID' as a placeholder.
-        subject_id (str): The value to replace 'Sample+ID'.
+        url (str): The Google Forms URL containing 'SampleID' as a placeholder.
+        subject_id (str): The value to replace 'SampleID'.
         Returns:
-        str: The updated URL with 'Sample+ID' replaced by subject_id.
+        str: The updated URL with 'SampleID' replaced by subject_id.
         """
         if not url.strip():
             return url
         
-        subject_id = subject_id.replace(" ", "+")
+        # URL-encode the subject_id to handle special characters (like @ and .)
+        from urllib.parse import quote
+        encoded_subject_id = quote(subject_id, safe='')
         
-        # List of possible case variations
-        variations = ["Sample+ID", "SAMPLE+ID", "sample+id", "Sample+Id", "sample+Id", "SAMPLE+Id"]
+        # Replace the placeholder (case-insensitive)
+        variations = ["SampleID", "SAMPLEID", "sampleid"]
         
         updated_url = url
         for variation in variations:
-            updated_url = updated_url.replace(variation, subject_id)
+            updated_url = updated_url.replace(variation, encoded_subject_id)
         
         return updated_url
 
