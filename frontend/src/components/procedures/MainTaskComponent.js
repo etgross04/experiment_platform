@@ -7,7 +7,8 @@ const MainTaskComponent = ({
   procedure, 
   sessionId, 
   onTaskComplete, 
-  isExperimenterMode = false 
+  isExperimenterMode = false ,
+  procedureActive = false
 }) => {
   const validQuestionSets = ['main_task_1', 'main_task_2', 'main_task_3'];
   const selectedQuestionSet = validQuestionSets.includes(questionSet) ? questionSet : 'main_task_1';
@@ -21,6 +22,8 @@ const MainTaskComponent = ({
   const [condition, setConditionState] = useState('None');
   const [audioFiles, setAudioFiles] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  // const [procedureStarted, setProcedureStarted] = useState(false);
 
   // Audio refs
   const audioRefs = useRef({});
@@ -30,36 +33,66 @@ const MainTaskComponent = ({
   
   const AUDIO_DIR = `/audio_files/main_task_audio/${selectedQuestionSet}/`;
 
-  // Load available audio files
   useEffect(() => {
-    const loadAudioFiles = async () => {
-      try {
-        const response = await fetch(`/api/main-task-audio/${selectedQuestionSet}`);
-        const data = await response.json();
+  const loadAudioFiles = async () => {
+    try {
+      const response = await fetch(`/api/main-task-audio/${selectedQuestionSet}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('=== AUDIO FILE LOADING DEBUG ===');
+        console.log('All files from server:', data.files);
         
-        if (data.success) {
-          // Categorize files
-          const files = {
-            intro: data.files.find(f => f.startsWith('1-') && f.toLowerCase().includes('intro')),
-            preQuestions: data.files.find(f => f.startsWith('2-') && f.toLowerCase().includes('pre')),
-            questions: data.files.filter(f => f.toLowerCase().includes('question_')).sort(),
-            wait: data.files.find(f => f.toLowerCase().includes('wait_for_instructions'))
-          };
+        // Find questions with VERY simple pattern
+        const questionFiles = data.files.filter(f => {
+          const fileNum = parseInt(f.match(/^(\d+)-/)?.[1]);
+          const hasQ = f.toUpperCase().includes('Q');
           
-          console.log('Loaded audio files:', files);
-          setAudioFiles(files);
-        } else {
-          console.error('Failed to load audio files:', data.error);
+          console.log(`File: ${f}`);
+          console.log(`  - Starts with number: ${fileNum}`);
+          console.log(`  - Number >= 3: ${fileNum >= 3}`);
+          console.log(`  - Contains Q: ${hasQ}`);
+          console.log(`  - MATCH: ${fileNum >= 3 && hasQ}`);
+          
+          return fileNum >= 3 && hasQ;
+        }).sort((a, b) => {
+          const numA = parseInt(a.match(/^(\d+)-/)[1]);
+          const numB = parseInt(b.match(/^(\d+)-/)[1]);
+          return numA - numB;
+        });
+        
+        const files = {
+          intro: data.files.find(f => f.startsWith('1-')),
+          preQuestions: data.files.find(f => f.startsWith('2-')),
+          questions: questionFiles,
+          wait: data.files.find(f => f.toLowerCase().includes('wait'))
+        };
+        
+        console.log('=== FINAL PARSED FILES ===');
+        console.log('Intro:', files.intro);
+        console.log('PreQuestions:', files.preQuestions);
+        console.log('Questions:', files.questions);
+        console.log('Wait:', files.wait);
+        console.log('Number of questions:', files.questions.length);
+        
+        if (files.questions.length === 0) {
+          console.error('NO QUESTIONS FOUND!');
+          console.error('Files must: 1) Start with "3-", "4-", etc. AND 2) Contain the letter Q');
         }
-      } catch (error) {
-        console.error('Error loading audio files:', error);
-      } finally {
-        setLoading(false);
+        
+        setAudioFiles(files);
+      } else {
+        console.error('Failed to load audio files:', data.error);
       }
-    };
-    
-    loadAudioFiles();
-  }, [selectedQuestionSet]);
+    } catch (error) {
+      console.error('Error loading audio files:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  loadAudioFiles();
+}, [selectedQuestionSet]);
 
   useEffect(() => {
     let taskCondition = 'main_task';
@@ -83,14 +116,12 @@ const MainTaskComponent = ({
   const playAudio = (audioType, onEndedCallback) => {
     const ref = audioRefs.current[audioType];
     if (ref) {
-      ref.load();
-      ref.play()
-        .then(() => console.log(`Playing ${audioType}`))
-        .catch(err => console.error(`Error playing ${audioType}:`, err));
-      
       if (onEndedCallback) {
         ref.onended = onEndedCallback;
       }
+      ref.play()
+        .then(() => console.log(`Playing ${audioType}`))
+        .catch(err => console.error(`Error playing ${audioType}:`, err));
     }
   };
 
@@ -116,31 +147,27 @@ const MainTaskComponent = ({
 
   const handlePreQuestionsEnd = () => {
     console.log("Pre-questions finished, auto-playing first question...");
-    setCurrentPhase('question1');
-    setTimeout(() => playAudio('question1', handleQuestion1End), 500);
+    setCurrentQuestionIndex(0);
+    setCurrentPhase('question');
+    setTimeout(() => playAudio(`question_${0}`, handleQuestionEnd), 500);
   };
 
-  const handleQuestion1End = () => {
-    console.log("Question 1 finished, starting recording...");
-    startRecordingForQuestion('question1');
+  const handleQuestionEnd = () => {
+    console.log(`Question ${currentQuestionIndex + 1} finished, starting recording...`);
+    startRecordingForQuestion(currentQuestionIndex);
   };
 
-  const handleQuestion2End = () => {
-    console.log("Question 2 finished, starting recording...");
-    startRecordingForQuestion('question2');
-  };
-
-  const startRecordingForQuestion = (questionType) => {
+  const startRecordingForQuestion = (questionIndex) => {
     setIsRecording(true);
-    setRecordingStatus(`Recording started for ${questionType}... 90 second timer started.`);
+    setRecordingStatus(`Recording started for question ${questionIndex + 1}... 90 second timer started.`);
     
     try {
-      const emarker = `${eventMarker}_${questionType}`;
+      const emarker = `${eventMarker}_question_${questionIndex + 1}`;
       setEventMarker(emarker);
       startRecording();
       playBeep();
       
-      console.log(`Recording started for ${questionType}`);
+      console.log(`Recording started for question ${questionIndex + 1}`);
 
       beepTimeoutRef.current = setTimeout(() => {
         playBeep();
@@ -148,7 +175,7 @@ const MainTaskComponent = ({
       }, 75000);
 
       recordingTimeoutRef.current = setTimeout(() => {
-        stopRecordingForQuestion(questionType);
+        stopRecordingForQuestion(questionIndex);
       }, 90000);
     } catch (error) {
       console.error("Recording failed:", error);
@@ -156,11 +183,11 @@ const MainTaskComponent = ({
     }
   };
 
-  const stopRecordingForQuestion = (questionType) => {
+  const stopRecordingForQuestion = (questionIndex) => {
     setIsRecording(false);
-    console.log(`Stopping recording for ${questionType}`);
+    console.log(`Stopping recording for question ${questionIndex + 1}`);
     
-    recordTaskAudio(eventMarker, condition, 'stop', questionType, (message) => {
+    recordTaskAudio(eventMarker, condition, 'stop', `question_${questionIndex + 1}`, (message) => {
       setRecordingStatus(message);
     });
     
@@ -173,12 +200,13 @@ const MainTaskComponent = ({
       clearTimeout(beepTimeoutRef.current);
     }
     
-    if (questionType === 'question1') {
-      console.log("Recording 1 complete, auto-playing Question 2...");
-      setCurrentPhase('question2');
-      setTimeout(() => playAudio('question2', handleQuestion2End), 500);
-    } else if (questionType === 'question2') {
-      console.log("Recording 2 complete, auto-playing wait instructions...");
+    const nextQuestionIndex = questionIndex + 1;
+    if (nextQuestionIndex < audioFiles.questions.length) {
+      console.log(`Recording ${questionIndex + 1} complete, auto-playing Question ${nextQuestionIndex + 1}...`);
+      setCurrentQuestionIndex(nextQuestionIndex);
+      setTimeout(() => playAudio(`question_${nextQuestionIndex}`, handleQuestionEnd), 500);
+    } else {
+      console.log(`All questions complete, auto-playing wait instructions...`);
       setCurrentPhase('wait');
       setTimeout(() => playAudio('wait', handleWaitInstructionsEnd), 500);
     }
@@ -199,6 +227,33 @@ const MainTaskComponent = ({
       }
     }
   };
+
+  // const handleStartProcedure = async () => {
+  //   try {
+  //     const response = await fetch(`/api/sessions/${sessionId}/set-current-procedure`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         current_procedure: procedure.position || 0,
+  //         procedure_name: procedure.name,
+  //         timestamp: new Date().toISOString()
+  //       })
+  //     });
+      
+  //     if (response.ok) {
+  //       setProcedureStarted(true);
+  //       console.log('Main Task procedure started and subject interface notified');
+  //     } else {
+  //       console.error('Failed to start procedure');
+  //       alert('Failed to start procedure. Please try again.');
+  //     }
+  //   } catch (error) {
+  //     console.error('Error starting procedure:', error);
+  //     alert('Error starting procedure. Please try again.');
+  //   }
+  // };
 
   useEffect(() => {
     return () => {
@@ -223,35 +278,16 @@ const MainTaskComponent = ({
   }
 
   if (isExperimenterMode) {
+    if (!procedureActive) {
+      return (
+        <div className="main-task-experimenter-control">
+          <p style={{ color: '#666', fontStyle: 'italic' }}>Click the Main Task procedure in the procedure list to activate controls.</p>
+        </div>
+      );
+    }
+    
     return (
       <div className="main-task-experimenter-control">
-        {/* Create audio elements dynamically */}
-        {audioFiles.intro && (
-          <audio ref={el => audioRefs.current.intro = el} style={{ display: 'none' }}>
-            <source src={`${AUDIO_DIR}${audioFiles.intro}`} type="audio/mpeg" />
-          </audio>
-        )}
-        {audioFiles.preQuestions && (
-          <audio ref={el => audioRefs.current.preQuestions = el} style={{ display: 'none' }}>
-            <source src={`${AUDIO_DIR}${audioFiles.preQuestions}`} type="audio/mpeg" />
-          </audio>
-        )}
-        {audioFiles.questions?.[0] && (
-          <audio ref={el => audioRefs.current.question1 = el} style={{ display: 'none' }}>
-            <source src={`${AUDIO_DIR}${audioFiles.questions[0]}`} type="audio/mpeg" />
-          </audio>
-        )}
-        {audioFiles.questions?.[1] && (
-          <audio ref={el => audioRefs.current.question2 = el} style={{ display: 'none' }}>
-            <source src={`${AUDIO_DIR}${audioFiles.questions[1]}`} type="audio/mpeg" />
-          </audio>
-        )}
-        {audioFiles.wait && (
-          <audio ref={el => audioRefs.current.wait = el} style={{ display: 'none' }}>
-            <source src={`${AUDIO_DIR}${audioFiles.wait}`} type="audio/mpeg" />
-          </audio>
-        )}
-
         <div className="main-task-status">
           <div className={`status-indicator ${isRecording ? 'recording' : ''}`}>
             <div className={`status-dot ${isRecording ? 'active' : ''}`}></div>
@@ -260,8 +296,7 @@ const MainTaskComponent = ({
                currentPhase === 'completed' ? 'Completed' : 
                currentPhase === 'wait' ? 'Final instructions' :
                currentPhase === 'observation' ? `Observing (${observationTimeLeft}s)` :
-               currentPhase === 'question1' ? 'Question 1' :
-               currentPhase === 'question2' ? 'Question 2' :
+               currentPhase === 'question' ? `Question ${currentQuestionIndex + 1}` :
                currentPhase === 'preQuestions' ? 'Pre-Questions' :
                'Introduction'}
             </span>
@@ -269,94 +304,75 @@ const MainTaskComponent = ({
         </div>
 
         <div className="main-task-controls">
-          {currentPhase === 'intro' && audioFiles.intro && (
-            <div className="intro-control">
-              <label>Introduction Audio:</label>
+          {/* Keep all audio elements mounted but hidden, show only the current one */}
+          <div className="intro-control" style={{ display: currentPhase === 'intro' ? 'block' : 'none' }}>
+            <label>Introduction Audio:</label>
+            <audio 
+              ref={el => audioRefs.current.intro = el}
+              controls
+              onEnded={handleIntroEnd}
+              className="audio-control"
+            >
+              <source src={`${AUDIO_DIR}${audioFiles.intro}`} type="audio/mpeg" />
+            </audio>
+          </div>
+
+          <div className="observation-control" style={{ display: currentPhase === 'observation' ? 'block' : 'none' }}>
+            <label>Observation Period:</label>
+            <div className="observation-timer-display">
+              <div className="timer-count">{observationTimeLeft}s</div>
+              <div className="timer-text">Observation time remaining</div>
+            </div>
+          </div>
+
+          <div className="instructions-control" style={{ display: currentPhase === 'preQuestions' ? 'block' : 'none' }}>
+            <label>Pre-Questions Instructions:</label>
+            <audio 
+              ref={el => audioRefs.current.preQuestions = el}
+              controls
+              onEnded={handlePreQuestionsEnd}
+              className="audio-control"
+            >
+              <source src={`${AUDIO_DIR}${audioFiles.preQuestions}`} type="audio/mpeg" />
+            </audio>
+          </div>
+
+          {audioFiles.questions?.map((questionFile, idx) => (
+            <div 
+              key={idx}
+              className="question-control" 
+              style={{ display: currentPhase === 'question' && currentQuestionIndex === idx ? 'block' : 'none' }}
+            >
+              <label>Question {idx + 1}:</label>
               <audio 
-                ref={el => audioRefs.current.intro = el}
+                ref={el => audioRefs.current[`question_${idx}`] = el}
                 controls
-                onEnded={handleIntroEnd}
+                onEnded={handleQuestionEnd}
                 className="audio-control"
               >
-                <source src={`${AUDIO_DIR}${audioFiles.intro}`} type="audio/mpeg" />
+                <source src={`${AUDIO_DIR}${questionFile}`} type="audio/mpeg" />
               </audio>
             </div>
-          )}
+          ))}
 
-          {currentPhase === 'observation' && (
-            <div className="observation-control">
-              <label>Observation Period:</label>
-              <div className="observation-timer-display">
-                <div className="timer-count">{observationTimeLeft}s</div>
-                <div className="timer-text">Observation time remaining</div>
-              </div>
-            </div>
-          )}
+          <div className="wait-control" style={{ display: currentPhase === 'wait' ? 'block' : 'none' }}>
+            <label>Final Instructions:</label>
+            <audio 
+              ref={el => audioRefs.current.wait = el}
+              controls
+              onEnded={handleWaitInstructionsEnd}
+              className="audio-control"
+            >
+              <source src={`${AUDIO_DIR}${audioFiles.wait}`} type="audio/mpeg" />
+            </audio>
+          </div>
 
-          {currentPhase === 'preQuestions' && audioFiles.preQuestions && (
-            <div className="instructions-control">
-              <label>Pre-Questions Instructions:</label>
-              <audio 
-                ref={el => audioRefs.current.preQuestions = el}
-                controls
-                onEnded={handlePreQuestionsEnd}
-                className="audio-control"
-              >
-                <source src={`${AUDIO_DIR}${audioFiles.preQuestions}`} type="audio/mpeg" />
-              </audio>
+          <div className="completion-control" style={{ display: currentPhase === 'completed' ? 'block' : 'none' }}>
+            <label>Task Completed</label>
+            <div className="completion-display">
+              Main task automation sequence completed successfully.
             </div>
-          )}
-
-          {currentPhase === 'question1' && audioFiles.questions?.[0] && (
-            <div className="question-control">
-              <label>Question 1:</label>
-              <audio 
-                ref={el => audioRefs.current.question1 = el}
-                controls
-                onEnded={handleQuestion1End}
-                className="audio-control"
-              >
-                <source src={`${AUDIO_DIR}${audioFiles.questions[0]}`} type="audio/mpeg" />
-              </audio>
-            </div>
-          )}
-
-          {currentPhase === 'question2' && audioFiles.questions?.[1] && (
-            <div className="question-control">
-              <label>Question 2:</label>
-              <audio 
-                ref={el => audioRefs.current.question2 = el}
-                controls
-                onEnded={handleQuestion2End}
-                className="audio-control"
-              >
-                <source src={`${AUDIO_DIR}${audioFiles.questions[1]}`} type="audio/mpeg" />
-              </audio>
-            </div>
-          )}
-
-          {currentPhase === 'wait' && audioFiles.wait && (
-            <div className="wait-control">
-              <label>Final Instructions:</label>
-              <audio 
-                ref={el => audioRefs.current.wait = el}
-                controls
-                onEnded={handleWaitInstructionsEnd}
-                className="audio-control"
-              >
-                <source src={`${AUDIO_DIR}${audioFiles.wait}`} type="audio/mpeg" />
-              </audio>
-            </div>
-          )}
-
-          {currentPhase === 'completed' && (
-            <div className="completion-control">
-              <label>Task Completed</label>
-              <div className="completion-display">
-                Main task automation sequence completed successfully.
-              </div>
-            </div>
-          )}
+          </div>
         </div>
 
         {recordingStatus && (
@@ -368,7 +384,7 @@ const MainTaskComponent = ({
     );
   }
 
-  // Subject mode rendering (full UI) - similar changes apply here
+  // Subject mode rendering
   return (
     <div className="main-task-component">
       {/* Hidden audio elements */}
@@ -383,7 +399,7 @@ const MainTaskComponent = ({
         </audio>
       )}
       {audioFiles.questions?.map((questionFile, idx) => (
-        <audio key={idx} ref={el => audioRefs.current[`question${idx + 1}`] = el} style={{ display: 'none' }}>
+        <audio key={idx} ref={el => audioRefs.current[`question_${idx}`] = el} style={{ display: 'none' }}>
           <source src={`${AUDIO_DIR}${questionFile}`} type="audio/mpeg" />
         </audio>
       ))}
@@ -449,11 +465,11 @@ const MainTaskComponent = ({
             </div>
           )}
 
-          {(currentPhase === 'question1' || currentPhase === 'question2') && (
+          {currentPhase === 'question' && (
             <div className="question-section">
-              <h3>{currentPhase === 'question1' ? 'Question 1 (Playing Automatically)' : 'Question 2 (Playing Automatically)'}</h3>
+              <h3>Question {currentQuestionIndex + 1} (Playing Automatically)</h3>
               <div className="auto-play-indicator">
-                <p>Playing: {currentPhase === 'question1' ? audioFiles.questions?.[0] : audioFiles.questions?.[1]}</p>
+                <p>Playing: {audioFiles.questions?.[currentQuestionIndex]}</p>
                 <div className="recording-status">{recordingStatus}</div>
               </div>
             </div>
@@ -486,8 +502,7 @@ const MainTaskComponent = ({
              currentPhase === 'completed' ? 'Task completed' : 
              currentPhase === 'wait' ? 'Playing final instructions' :
              currentPhase === 'observation' ? `Observation period (${observationTimeLeft}s remaining)` :
-             currentPhase === 'question1' ? 'Question 1' :
-             currentPhase === 'question2' ? 'Question 2' :
+             currentPhase === 'question' ? `Question ${currentQuestionIndex + 1}` :
              currentPhase === 'preQuestions' ? 'Playing pre-questions instructions' :
              'Listen to introduction'}
           </span>

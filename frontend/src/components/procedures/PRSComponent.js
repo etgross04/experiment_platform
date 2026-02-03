@@ -36,7 +36,8 @@ const PRSComponent = ({
   prsSequenceNumber, 
   sessionId, 
   onTaskComplete, 
-  isExperimenterMode = false 
+  isExperimenterMode = false,
+  procedureActive = false
 }) => {
   const validQuestionSets = ['prs_1', 'prs_2', 'prs_3'];
   const selectedQuestionSet = validQuestionSets.includes(questionSet) ? questionSet : 'prs_1';
@@ -44,6 +45,7 @@ const PRSComponent = ({
   // State management
   const [audioFiles, setAudioFiles] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // const [procedureStarted, setProcedureStarted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState('');
   const [introFinished, setIntroFinished] = useState(false);
@@ -112,6 +114,26 @@ const PRSComponent = ({
     
     fetchAudioFiles();
   }, [selectedQuestionSet, procedure, prsSequenceNumber]);
+
+  // const handleStartProcedure = async () => {
+  //   try {
+  //     const response = await fetch(`/api/sessions/${sessionId}/set-current-procedure`, {
+  //       method: 'POST',
+  //       headers: { 'Content-Type': 'application/json' },
+  //       body: JSON.stringify({
+  //         current_procedure: procedure.position || 0,
+  //         procedure_name: procedure.name,
+  //         timestamp: new Date().toISOString()
+  //       })
+  //     });
+      
+  //     if (response.ok) {
+  //       setProcedureStarted(true);
+  //     }
+  //   } catch (error) {
+  //     console.error('Error starting procedure:', error);
+  //   }
+  // };
 
   const handleIntroEnd = () => {
     console.log("Intro finished, starting first randomized audio...");
@@ -244,6 +266,14 @@ const PRSComponent = ({
   }, []);
 
   if (isExperimenterMode) {
+    if (!procedureActive) {
+      return (
+        <div className="prs-experimenter-control">
+          <p style={{ color: '#666', fontStyle: 'italic' }}>Click the PRS procedure in the procedure list to activate controls.</p>
+        </div>
+      );
+    }
+    
     return (
       <div className="prs-experimenter-control">
         <div className="prs-status">

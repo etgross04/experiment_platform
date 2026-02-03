@@ -1,0 +1,194 @@
+{
+  "steps": [
+    {
+      "file": "01-INST-Practice_Intro.mp3",
+      "sessionTypes": ["practice"],
+      "timeout": 2,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "stepType": "timeout",
+      "sessionTypes": ["practice"],
+      "timeout": 16,
+      "beepBefore": true,
+      "beepAfter": true,
+      "recording": false
+    },
+    {
+      "file": "02-INST-Practice_Repeat.mp3",
+      "sessionTypes": ["practice"],
+      "timeout": 5,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "stepType": "timeout",
+      "sessionTypes": ["practice"],
+      "timeout": 16,
+      "beepBefore": true,
+      "beepAfter": true,
+      "recording": false
+    },
+    {
+      "file": "03-INST-Practice_Complete.mp3",
+      "sessionTypes": ["practice"],
+      "timeout": 0,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "file": "04-INST-First_Room.mp3",
+      "sessionTypes": ["first_room"],
+      "timeout": 0,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    
+    {
+      "file": "05-INST-Next_Room.mp3",
+      "sessionTypes": ["subsequent_room"],
+      "timeout": 0,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    
+    {
+      "file": "06-INST-Stand_Still_40s.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 40,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "file": "07-INST-Walk_Intro.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 5,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "file": "08-INST-Task_A.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 60,
+      "beepBefore": false,
+      "beepAfter": true,
+      "recording": false
+    },
+    {
+      "file": "09-INST-Stand_Still_10s.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 10,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "file": "10-INST-Task_B.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 60,
+      "beepBefore": false,
+      "beepAfter": true,
+      "recording": false
+    },
+    {
+      "file": "09-INST-Stand_Still_10s.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 10,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "file": "11-INST-Task_C.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 5,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "stepType": "timeout",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 60,
+      "beepBefore": true,
+      "beepAfter": true,
+      "recording": false
+    },
+    {
+      "file": "12-Q1-Anxiety_Rating.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 2,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "stepType": "recording",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 0,
+      "beepBefore": true,
+      "beepAfter": true,
+      "recording": true,
+      "recordingDuration": 5
+    },
+    {
+      "file": "13-INST-Anxiety_Response.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 2,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "stepType": "recording",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 0,
+      "beepBefore": true,
+      "beepAfter": true,
+      "recording": true,
+      "recordingDuration": 90
+    },
+    {
+      "file": "14-Q3-How_Feel.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 0,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    {
+      "stepType": "recording",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 0,
+      "beepBefore": true,
+      "beepAfter": true,
+      "recording": true,
+      "recordingDuration": 90
+    },
+    {
+      "file": "15-Q1-Stand_Still_30s.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 30,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    },
+    
+    {
+      "file": "16-INST-Wait_For_Instructions.mp3",
+      "sessionTypes": ["first_room", "subsequent_room"],
+      "timeout": 0,
+      "beepBefore": false,
+      "beepAfter": false,
+      "recording": false
+    }
+  ]
+}

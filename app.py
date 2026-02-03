@@ -563,6 +563,156 @@ def get_main_task_audio_files(question_set):
             'success': False,
             'error': f'Failed to get audio files: {str(e)}'
         }), 500
+
+@app.route('/api/vr-room-audio/<audio_set>', methods=['GET'])
+def get_vr_room_audio_files(audio_set):
+    """Get list of audio files for a specific VR room task audio set"""
+    try:
+        audio_dir = os.path.join('static', 'audio_files', 'vr_room_audio', audio_set)
+        
+        if not os.path.exists(audio_dir):
+            return jsonify({
+                'success': False,
+                'error': f'Audio directory not found: {audio_dir}'
+            }), 404
+        
+        # Get all audio files, sorted by step number
+        all_files = [f for f in os.listdir(audio_dir) 
+                     if f.endswith(('.mp3', '.wav'))]
+        
+        def get_sort_key(filename):
+            match = re.match(r'^(\d+)-', filename)
+            if match:
+                return int(match.group(1))
+            return 0
+        
+        all_files.sort(key=get_sort_key)
+        
+        return jsonify({
+            'success': True,
+            'files': all_files,
+            'audio_set': audio_set
+        })
+        
+    except Exception as e:
+        print(f"Error getting VR room audio files for {audio_set}: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to get audio files: {str(e)}'
+        }), 500
+
+@app.route('/api/vr-room-config/<audio_set>', methods=['GET'])
+def get_vr_room_config(audio_set):
+    """Get configuration for a specific VR room task audio set"""
+    try:
+        config_path = os.path.join('static', 'audio_files', 'vr_room_audio', audio_set, 'config.json')
+        
+        if not os.path.exists(config_path):
+            return jsonify({
+                'success': False,
+                'error': f'Configuration file not found: {config_path}'
+            }), 404
+        
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        return jsonify({
+            'success': True,
+            'config': config
+        })
+        
+    except Exception as e:
+        print(f"Error getting VR room config for {audio_set}: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to get configuration: {str(e)}'
+        }), 500
+
+@app.route('/api/upload-vr-room-audio', methods=['POST'])
+def upload_vr_room_audio():
+    """Upload audio files for VR room task"""
+    try:
+        if 'audioFiles' not in request.files:
+            return jsonify({'success': False, 'error': 'No files provided'}), 400
+        
+        audio_set_name = request.form.get('audioSetName', '').strip()
+        if not audio_set_name:
+            return jsonify({'success': False, 'error': 'Audio set name is required'}), 400
+        
+        # Sanitize audio set name
+        audio_set_name = "".join(c for c in audio_set_name if c.isalnum() or c in ('_', '-')).lower()
+        
+        audio_dir = os.path.join('static', 'audio_files', 'vr_room_audio', audio_set_name)
+        os.makedirs(audio_dir, exist_ok=True)
+        
+        files = request.files.getlist('audioFiles')
+        uploaded_files = []
+        
+        for file in files:
+            if file.filename == '':
+                continue
+            
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(audio_dir, filename)
+            file.save(filepath)
+            uploaded_files.append(filename)
+        
+        print(f"Uploaded {len(uploaded_files)} files to {audio_dir}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully uploaded {len(uploaded_files)} files',
+            'audioSetName': audio_set_name,
+            'files': uploaded_files
+        })
+        
+    except Exception as e:
+        print(f"Upload error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/upload-vr-room-config', methods=['POST'])
+def upload_vr_room_config():
+    """Upload configuration file for VR room task"""
+    try:
+        if 'configFile' not in request.files:
+            return jsonify({'success': False, 'error': 'No config file provided'}), 400
+        
+        audio_set_name = request.form.get('audioSetName', '').strip()
+        if not audio_set_name:
+            return jsonify({'success': False, 'error': 'Audio set name is required'}), 400
+        
+        audio_set_name = "".join(c for c in audio_set_name if c.isalnum() or c in ('_', '-')).lower()
+        
+        config_file = request.files['configFile']
+        
+        # Read and validate JSON
+        config_data = json.load(config_file.stream)
+        
+        # Save to audio set directory
+        audio_dir = os.path.join('static', 'audio_files', 'vr_room_audio', audio_set_name)
+        os.makedirs(audio_dir, exist_ok=True)
+        
+        config_path = os.path.join(audio_dir, 'config.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f, indent=2)
+        
+        print(f"Saved configuration to {config_path}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Configuration uploaded successfully',
+            'config': config_data
+        })
+        
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'Invalid JSON: {str(e)}'}), 400
+    except Exception as e:
+        print(f"Config upload error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
     
 @app.route('/set_event_marker', methods=['POST'])
 def set_event_marker():
@@ -1313,6 +1463,13 @@ def process_procedure_for_psychopy(proc_data):
     Process procedure data to ensure PsychoPy integration fields are properly handled
     while maintaining backward compatibility
     """
+    # Extract platform from configuration if available, otherwise use top-level
+    config_platform = proc_data.get('configuration', {}).get('psychopy-setup', {}).get('platform')
+    top_level_platform = proc_data.get('platform')
+    
+    # Prioritize configuration platform over top-level
+    final_platform = config_platform if config_platform else top_level_platform
+    
     procedure = {
         'id': proc_data.get('id'),
         'instanceId': proc_data.get('instanceId'),
@@ -1321,7 +1478,7 @@ def process_procedure_for_psychopy(proc_data):
         'customDuration': proc_data.get('customDuration'),
         'color': proc_data.get('color'),
         'required': proc_data.get('required'),
-        'platform': proc_data.get('platform'),
+        'platform': final_platform,  # ← Use the extracted platform
         'position': proc_data.get('position'),
         
         'configuration': proc_data.get('configuration', {}),
@@ -1350,7 +1507,7 @@ def process_procedure_for_psychopy(proc_data):
             # PsychoPy integration fields (NEW)
             'usePsychoPy': proc_data.get('configuration', {}).get('psychopy-setup', {}).get('usePsychoPy', False),
             'psychopyInstructions': proc_data.get('configuration', {}).get('psychopy-setup', {}).get('psychopyInstructions'),
-            'platform': proc_data.get('configuration', {}).get('psychopy-setup', {}).get('platform', 'PsychoPy'),
+            'platform': final_platform,  # ← Also update in wizardData
             
             # SART specific fields (NEW)
             'sartVersion': proc_data.get('configuration', {}).get('task-setup', {}).get('sartVersion'),
@@ -1361,8 +1518,6 @@ def process_procedure_for_psychopy(proc_data):
 
             'breakDuration': proc_data.get('configuration', {}).get('duration', {}).get('duration'),
             'selectedVideo': proc_data.get('configuration', {}).get('media-selection', {}).get('selectedVideo'),
-            'rawConfiguration': proc_data.get('configuration', {}),
-            'platform': proc_data.get('platform') 
         }
     }
     
@@ -1680,9 +1835,6 @@ def record_consent(session_id):
 
 @app.route('/api/get-autofilled-survey-url', methods=['POST'])
 def get_autofilled_survey_url():
-    """
-    Get autofilled survey URL for a specific session and survey configuration.
-    """
     global form_manager, subject_manager
     
     try:
@@ -1691,7 +1843,13 @@ def get_autofilled_survey_url():
         survey_name = data.get('survey_name')
         survey_url = data.get('survey_url')
         
-        print(f"DEBUG: Original URL: {survey_url}")
+        print("="*80)
+        print("DEBUG: get_autofilled_survey_url called")
+        print(f"DEBUG: session_id: {session_id}")
+        print(f"DEBUG: survey_name: {survey_name}")
+        print(f"DEBUG: Original URL from request: {survey_url}")
+        print(f"DEBUG: 'Sample+ID' in original URL: {'Sample+ID' in survey_url}")
+        print("="*80)
         
         if not session_id or not survey_name or not survey_url:
             return jsonify({'success': False, 'error': 'Missing required parameters'}), 400
@@ -1700,19 +1858,30 @@ def get_autofilled_survey_url():
             return jsonify({'success': False, 'error': 'Session not found'}), 404
         
         subject_id = subject_manager.subject_id
+        print(f"DEBUG: Subject ID from subject_manager: '{subject_id}'")
+        print(f"DEBUG: Subject ID type: {type(subject_id)}")
+        print(f"DEBUG: Subject ID is None: {subject_id is None}")
+        print(f"DEBUG: Subject ID is empty: {subject_id == '' if subject_id else 'N/A'}")
+        
         if not subject_id:
+            print("ERROR: Subject ID not available!")
             return jsonify({'success': False, 'error': 'Subject ID not available. Participant form may not be completed.'}), 400
         
-        print(f"DEBUG: Subject ID from subject_manager: {subject_id}")
-        print(f"DEBUG: URL contains Sample+ID: {'Sample+ID' in survey_url}")
+        print(f"DEBUG: form_manager exists: {form_manager is not None}")
         
         if form_manager is None:
             form_manager = FormManager()
         
+        print(f"DEBUG: Calling customize_form_url with:")
+        print(f"  - URL: {survey_url}")
+        print(f"  - subject_id: {subject_id}")
+        
         autofilled_url = form_manager.customize_form_url(survey_url, subject_id)
         
-        print(f"DEBUG: Autofilled URL: {autofilled_url}")
-        print(f"DEBUG: Still contains Sample+ID: {'Sample+ID' in autofilled_url}")
+        print(f"DEBUG: Result from customize_form_url: {autofilled_url}")
+        print(f"DEBUG: Still contains 'Sample+ID': {'Sample+ID' in autofilled_url}")
+        print(f"DEBUG: URLs are different: {autofilled_url != survey_url}")
+        print("="*80)
         
         return jsonify({
             'success': True,
@@ -1721,7 +1890,7 @@ def get_autofilled_survey_url():
         })
         
     except Exception as e:
-        print(f"Error generating autofilled survey URL: {e}")
+        print(f"ERROR in get_autofilled_survey_url: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': 'Server error'}), 500
@@ -2631,6 +2800,10 @@ def instantiate_modules(template_path):
                 needs_mat = True
                 print(f"✓ Mental Arithmetic Task detected in: {procedure_name}")
 
+            if procedure.get('id') == 'vr-room-task':
+                needs_audio_ser = True
+                print(f"✓ VR Room Task detected in: {procedure_name}")
+                
         # DEBUG STATEMENTS
         print(f"\n=== FINAL INSTANTIATION DECISIONS ===")
         print(f"needs_audio_ser: {needs_audio_ser}")
@@ -3160,4 +3333,3 @@ if __name__ == '__main__':
     )
     heartbeat_monitor_thread.start()
     app.run(host='127.0.0.1', port=5001, debug=True, threaded=True)
-    

@@ -19,44 +19,63 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const path = window.location.pathname;
+  const path = window.location.pathname;
+  
+  // Only attach shutdown handlers for home/builder/runner views
+  if (path.includes('/experimenter') || path.includes('/subject')) {
+    return;
+  }
+
+  // Clear the navigation flag if it exists (from previous navigation)
+  if (sessionStorage.getItem('internalNavigation') === 'true') {
+    sessionStorage.removeItem('internalNavigation');
+  }
+
+  const handleBeforeUnload = (event) => {
+    const isInternal = sessionStorage.getItem('internalNavigation') === 'true';
     
-    // Only attach shutdown handlers for home/builder/runner views
-    if (path.includes('/experimenter') || path.includes('/subject')) {
-      return;
+    if (isInternal) {
+      // DON'T remove it here - let it persist through reload
+      return; // Don't show warning
     }
 
-    const handleBeforeUnload = (event) => {
-      const message = 'Are you sure you want to close? This will shut down the experiment platform.';
-      event.preventDefault();
-      event.returnValue = message;
-      return message;
-    };
+    const message = 'Are you sure you want to close? This will shut down the experiment platform.';
+    event.preventDefault();
+    event.returnValue = message;
+    return message;
+  };
 
-    const handleUnload = () => {
-      fetch('http://localhost:5001/api/shutdown', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          timestamp: new Date().toISOString(),
-          source: 'app_close'
-        }),
-        keepalive: true
-      }).catch(error => {
-        console.error('Shutdown failed:', error);
-      });
-    };
+  const handleUnload = () => {
+    const isInternal = sessionStorage.getItem('internalNavigation') === 'true';
+    
+    if (isInternal) {
+      // DON'T remove it here - let the next page load clear it
+      return; // Don't shutdown server
+    }
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('unload', handleUnload);
+    fetch('http://localhost:5001/api/shutdown', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        source: 'app_close'
+      }),
+      keepalive: true
+    }).catch(error => {
+      console.error('Shutdown failed:', error);
+    });
+  };
 
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('unload', handleUnload);
-    };
-  }, []);
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  window.addEventListener('unload', handleUnload);
+
+  return () => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.removeEventListener('unload', handleUnload);
+  };
+}, []); // Note: empty dependency array - only runs once on mount
 
   const path = window.location.pathname;
   if (path.includes('/experimenter')) {

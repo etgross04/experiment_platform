@@ -28,6 +28,7 @@ function ExperimentRunner({ onBack }) {
       return;
     }
     
+    sessionStorage.setItem('internalNavigation', 'true');
     // Navigate to experiment builder with edit parameter
     window.location.href = `/?view=builder&edit=${selectedExperiment.id}`;
   };

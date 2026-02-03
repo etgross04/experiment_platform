@@ -153,5 +153,44 @@
         "content": "1. Once the procedure begins, ensure that the subject sees the SER Baseline page on their interface\n\n2. Instruct the subject to click 'Start' to begin the procedure\n\n3. The subject will be presented with a series of questions displayed on their screen. Instruct the subject to begin recording their response for each question by clicking 'Record' beneath each question\n\n4. Monitor the audio level if possible and make adjustments to the loudness if necessary. The procedure should take 2-5 minutes"
       }
     ]
+  },
+  "stroop": {
+    "title": "Stroop",
+    "steps": [
+      {
+        "id": "step1",
+        "title": "Step 1",
+        "label": "Stroop Instructions",
+        "content": "instruction 1"
+      }
+    ]
+  },
+  "iat": {
+    "title": "IAT",
+    "steps": [
+      {
+        "id": "step1",
+        "title": "Step 1",
+        "label": "IAT Instructions",
+        "content": "instruction 1"
+      }
+    ]
+  },
+  "n-back-task": {
+    "title": "N-Back Task",
+    "steps": [
+      {
+        "id": "step1",
+        "title": "Step 1",
+        "label": "N-Back Task - Step 1",
+        "content": "Example instruction 1"
+      },
+      {
+        "id": "step2",
+        "title": "Step 2",
+        "label": "N-Back Task - Step 2",
+        "content": "Example instruction 2"
+      }
+    ]
   }
 }

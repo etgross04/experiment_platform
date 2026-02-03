@@ -70,12 +70,27 @@
       "required": true,
       "category": "main-tasks"
     },
+    "vr-room-task": {
+      "id": "vr-room-task",
+      "name": "VR Room Task",
+      "duration": 45,
+      "required": false,
+      "category": "main-tasks"
+    },
     "ser-baseline": {
       "id": "ser-baseline",
       "name": "SER Baseline Recording",
       "duration": 5,
       "required": false,
       "category": "baseline-collection"
+    },
+    "n-back-task": {
+      "id": "n-back-task",
+      "name": "N-Back Task",
+      "duration": 15,
+      "required": false,
+      "category": "main-tasks",
+      "platform": "psytoolkit"
     }
   },
   "categories": {
@@ -316,6 +331,40 @@
           "position": 5
         }
       ]
+    },
+    "procedural-memory-correct": {
+      "name": "Procedural Memory (Correct)",
+      "description": "Corrected version",
+      "color": "#f69d13",
+      "procedures": [
+        {
+          "id": "demographics",
+          "position": 0
+        },
+        {
+          "id": "bio-baseline-recording",
+          "position": 1
+        },
+        {
+          "id": "main-task",
+          "position": 2,
+          "customName": "Prospective Memory Task",
+          "customDuration": 25
+        },
+        {
+          "id": "prs",
+          "position": 3,
+          "preConfigured": {
+            "question-set": {
+              "questionSet": "prs_1"
+            }
+          }
+        },
+        {
+          "id": "vr-room-task",
+          "position": 4
+        }
+      ]
     }
   },
   "wizardSteps": {
@@ -360,11 +409,6 @@
         "id": "survey-link",
         "title": "Survey Link",
         "description": "Enter external link or Google Forms URL"
-      },
-      {
-        "id": "validation",
-        "title": "Configuration Summary",
-        "description": "Review and confirm your demographics survey setup"
       }
     ],
     "survey": [
@@ -439,16 +483,28 @@
         "id": "question-set",
         "title": "Question Set Selection",
         "description": "Choose which main task question set to use"
+      }
+    ],
+    "vr-room-task": [
+      {
+        "id": "audio-set-selection",
+        "title": "Audio File Set",
+        "description": "Select pre-configured audio set or upload custom files"
+      },
+      {
+        "id": "session-type-selection",
+        "title": "Session Type",
+        "description": "Select whether this is a practice or room exposure session"
+      },
+      {
+        "id": "sequence-editor",
+        "title": "Sequence Editor",
+        "description": "Configure step sequence, timeouts, beeps, and recordings"
       },
       {
         "id": "task-description",
-        "title": "Task Definition",
-        "description": "Define what participants will do"
-      },
-      {
-        "id": "environment",
-        "title": "Task Environment",
-        "description": "VR, computer, or physical environment setup"
+        "title": "Task Details",
+        "description": "Set condition marker and task parameters"
       }
     ],
     "post-task-survey": [
@@ -480,11 +536,27 @@
         "id": "psychopy-setup",
         "title": "External Procedure Setup",
         "description": "Specify task as external to the experiment platform"
-      },
+      }
+    ],
+    "stroop": [
       {
-        "id": "task-description",
-        "title": "Task Configuration",
-        "description": "Define task parameters and settings"
+        "id": "psychopy-setup",
+        "title": "PsychoPy Setup",
+        "description": "Configure PsychoPy integration options"
+      }
+    ],
+    "iat": [
+      {
+        "id": "psychopy-setup",
+        "title": "PsychoPy Setup",
+        "description": "Configure PsychoPy integration options"
+      }
+    ],
+    "n-back-task": [
+      {
+        "id": "psychopy-setup",
+        "title": "PsychoPy Setup",
+        "description": "Configure PsychoPy integration options"
       }
     ]
   }

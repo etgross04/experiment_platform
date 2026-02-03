@@ -64,6 +64,11 @@ function procedureRequiresAudio(procedureId, configuration) {
     return true;
   }
   
+  // VR Room Task always needs audio
+  if (procedureId === 'vr-room-task') {
+    return true;
+  }
+  
   // SER Baseline always needs audio
   if (procedureId === 'ser-baseline') {
     return true;
@@ -1425,6 +1430,99 @@ function ProcedureWizard({ procedure, onClose, onSave, config }) {
   );
 }
 
+function AudioFileSelector({ audioSetName, selectedFile, onChange }) {
+  const [availableFiles, setAvailableFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchAudioFiles = async () => {
+      if (!audioSetName) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const response = await fetch(`/api/vr-room-audio/${audioSetName}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          setAvailableFiles(data.files || []);
+          setError(null);
+        } else {
+          setError('Failed to load audio files');
+          setAvailableFiles([]);
+        }
+      } catch (err) {
+        console.error('Error fetching audio files:', err);
+        setError('Error loading audio files');
+        setAvailableFiles([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAudioFiles();
+  }, [audioSetName]);
+
+  if (loading) {
+    return (
+      <div style={{ 
+        padding: '0.5rem',
+        background: '#f9fafb',
+        border: '1px solid #d1d5db',
+        borderRadius: '0.375rem',
+        fontSize: '0.875rem',
+        color: '#6b7280'
+      }}>
+        Loading audio files...
+      </div>
+    );
+  }
+
+  if (error || !audioSetName) {
+    return (
+      <input
+        type="text"
+        value={selectedFile}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="e.g., 01-INST-Practice_Intro.mp3"
+        style={{ 
+          width: '100%',
+          padding: '0.5rem',
+          border: '1px solid #d1d5db',
+          borderRadius: '0.375rem',
+          fontSize: '0.875rem',
+          fontFamily: 'monospace'
+        }}
+      />
+    );
+  }
+
+  return (
+    <select
+      value={selectedFile}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ 
+        width: '100%',
+        padding: '0.5rem',
+        border: '1px solid #d1d5db',
+        borderRadius: '0.375rem',
+        fontSize: '0.875rem',
+        fontFamily: 'monospace'
+      }}
+    >
+      <option value="">Select an audio file...</option>
+      {availableFiles.map(file => (
+        <option key={file} value={file}>
+          {file}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function WizardStepContent({ stepId, procedureId, value, configuration, onChange }) {
   const [formData, setFormData] = useState(value || {});
   const handleInputChange = (key, val) => {
@@ -1567,7 +1665,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                 <label>Google Forms URL (with pre-fill parameters) *</label>
                 <input 
                   type="url"
-                  placeholder="https://docs.google.com/forms/d/e/1FAIpQLSd.../viewform?usp=pp_url&entry.123456789=Sample+ID"
+                  placeholder="https://docs.google.com/forms/d/e/1FAIpQLSd.../viewform?usp=pp_url&entry.123456789=SampleID"
                   value={formData.googleFormUrl || ''}
                   onChange={(e) => handleInputChange('googleFormUrl', e.target.value)}
                   className="wizard-input-full wizard-mb-sm"
@@ -1586,7 +1684,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                 )}
                 
                 <small className="wizard-help-text">
-                  Paste the complete pre-filled URL from Google Forms. It should contain "Sample+ID" as the placeholder for subject information.
+                  Paste the complete pre-filled URL from Google Forms. It should contain "SampleID" as the placeholder for subject information.
                 </small>
               </>
             ) : (
@@ -1686,19 +1784,18 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1rem' }}>
                 <p><strong>To enable autofill integration with your experimental platform:</strong></p>
                 <ol style={{ paddingLeft: '1.5rem', lineHeight: '1.6' }}>
-                  <li>Open your Google Form and click the <strong>Send</strong> button</li>
-                  <li>Click the <strong>Link</strong> tab (🔗)</li>
-                  <li>Click <strong>"Get pre-filled link"</strong></li>
-                  <li>In the field where you want the subject identifier to appear, enter: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>Sample+ID</code></li>
+                  <li>Open your Google Form and click the hamburger icon in the top right corner</li>
+                  <li>Choose "Pre-fill form"</li>
+                  <li>In the field where you want the subject identifier to appear, enter: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>SampleID</code></li>
                   <li>Click <strong>"Get link"</strong> and copy the generated URL</li>
-                  <li>The URL should end with something like: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>entry.123456789=Sample+ID</code></li>
+                  <li>The URL should end with something like: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>entry.123456789=SampleID</code></li>
                 </ol>
               </div>
               
               <div style={{ background: '#fef3c7', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #f59e0b' }}>
                 <p><strong>⚠️ Important:</strong></p>
                 <ul style={{ paddingLeft: '1.5rem', marginBottom: '0' }}>
-                  <li>The placeholder <code>Sample+ID</code> will be automatically replaced with the actual subject's information</li>
+                  <li>The placeholder <code>SampleID</code> will be automatically replaced with the actual subject's information</li>
                   <li>Make sure your form fields are properly configured to accept pre-filled values</li>
                   <li>Test the form with the generated URL before using it in your experiment</li>
                 </ul>
@@ -1718,16 +1815,16 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                 <li>Open your Google Form and click the <strong>Send</strong> button</li>
                 <li>Click the <strong>Link</strong> tab (🔗)</li>
                 <li>Click <strong>"Get pre-filled link"</strong></li>
-                <li>In the field where you want the subject identifier to appear, enter: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>Sample+ID</code></li>
+                <li>In the field where you want the subject identifier to appear, enter: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>SampleID</code></li>
                 <li>Click <strong>"Get link"</strong> and copy the generated URL</li>
-                <li>The URL should end with something like: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>entry.123456789=Sample+ID</code></li>
+                <li>The URL should end with something like: <code style={{ background: '#e2e8f0', padding: '0.125rem 0.25rem', borderRadius: '0.25rem' }}>entry.123456789=SampleID</code></li>
               </ol>
             </div>
             
             <div style={{ background: '#fef3c7', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #f59e0b' }}>
               <p><strong>⚠️ Important:</strong></p>
               <ul style={{ paddingLeft: '1.5rem', marginBottom: '0' }}>
-                <li>The placeholder <code>Sample+ID</code> will be automatically replaced with the actual subject's information</li>
+                <li>The placeholder <code>SampleID</code> will be automatically replaced with the actual subject's information</li>
                 <li>Make sure your form fields are properly configured to accept pre-filled values</li>
                 <li>Test the form with the generated URL before using it in your experiment</li>
               </ul>
@@ -1754,7 +1851,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
           <label>Google Forms URL *</label>
           <input 
             type="url"
-            placeholder="https://docs.google.com/forms/d/e/1FAIpQLSd.../viewform?usp=pp_url&entry.123456789=Sample+ID"
+            placeholder="https://docs.google.com/forms/d/e/1FAIpQLSd.../viewform?usp=pp_url&entry.123456789=SampleID"
             value={formData.googleFormUrl || ''}
             onChange={(e) => handleInputChange('googleFormUrl', e.target.value)}
             style={{ width: '100%', marginBottom: '0.5rem' }}
@@ -1773,7 +1870,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
           )}
           
           <small style={{ color: '#666', display: 'block' }}>
-            Paste the complete pre-filled URL from Google Forms. It should contain "Sample+ID" as the placeholder for subject information.
+            Paste the complete pre-filled URL from Google Forms. It should contain "SampleID" as the placeholder for subject information.
           </small>
         </div>
       );
@@ -1877,6 +1974,932 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
         </div>
       );
 
+      case 'session-type-selection':
+        if (procedureId === 'vr-room-task') {
+          return (
+            <div className="form-group">
+              <label>VR Room Task Session Type</label>
+              <div className="radio-group">
+                <label className="radio-label">
+                  <input 
+                    type="radio" 
+                    name="sessionType"
+                    value="practice"
+                    checked={formData.sessionType === 'practice'}
+                    onChange={(e) => handleInputChange('sessionType', e.target.value)}
+                  />
+                  <div>
+                    <div>Practice Session</div>
+                    <small style={{ color: '#666', display: 'block', marginTop: '4px' }}>
+                      Initial practice walking session (no room exposure)
+                    </small>
+                  </div>
+                </label>
+                
+                <label className="radio-label">
+                  <input 
+                    type="radio" 
+                    name="sessionType"
+                    value="first_room"
+                    checked={formData.sessionType === 'first_room'}
+                    onChange={(e) => handleInputChange('sessionType', e.target.value)}
+                  />
+                  <div>
+                    <div>First Room Session</div>
+                    <small style={{ color: '#666', display: 'block', marginTop: '4px' }}>
+                      First exposure to a VR room (uses "This is the first room" audio)
+                    </small>
+                  </div>
+                </label>
+                
+                <label className="radio-label">
+                  <input 
+                    type="radio" 
+                    name="sessionType"
+                    value="subsequent_room"
+                    checked={formData.sessionType === 'subsequent_room'}
+                    onChange={(e) => handleInputChange('sessionType', e.target.value)}
+                  />
+                  <div>
+                    <div>Subsequent Room Session</div>
+                    <small style={{ color: '#666', display: 'block', marginTop: '4px' }}>
+                      Additional room exposures (uses "This is the next room" audio)
+                    </small>
+                  </div>
+                </label>
+              </div>
+            </div>
+          );
+        }
+        break;
+
+    case 'audio-set-selection':
+      if (procedureId === 'vr-room-task') {
+        // Check if audio was already uploaded in another VR Room Task procedure
+        const allProcedures = configuration._allProcedures || [];
+        const existingVRRoomTask = allProcedures.find(proc => 
+          proc.id === 'vr-room-task' && 
+          proc.configuration?.['audio-set-selection']?.audioSet
+        );
+
+        // Auto-populate if audio exists from another procedure
+// Only populate if we haven't already set audioSet AND files haven't been uploaded in THIS wizard instance
+if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
+  const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
+  const updatedData = {
+    ...formData,
+    audioSet: existingConfig.audioSet,
+    customAudioSetName: existingConfig.audioSet,
+    filesUploaded: true,
+    uploadedFileCount: existingConfig.uploadedFileCount || 0,
+    configUploaded: existingConfig.configUploaded || false
+  };
+  if (existingConfig.sequenceConfig) {
+    updatedData.sequenceConfig = existingConfig.sequenceConfig;
+  }
+  setFormData(updatedData);
+  onChange(updatedData);
+}
+
+        const audioAlreadyUploaded = existingVRRoomTask && existingVRRoomTask.configuration?.['audio-set-selection']?.filesUploaded;
+
+        return (
+          <div className="form-group">
+            {audioAlreadyUploaded ? (
+              <>
+                <div style={{ 
+                  padding: '1.5rem', 
+                  background: '#d1fae5', 
+                  borderRadius: '0.5rem',
+                  border: '2px solid #059669',
+                  marginBottom: '1.5rem'
+                }}>
+                  <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600', color: '#059669', fontSize: '1rem' }}>
+                    ✓ Audio Already Uploaded
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: '#065f46' }}>
+                    Audio set "<strong>{formData.customAudioSetName || formData.audioSet}</strong>" with {formData.uploadedFileCount} files is already available.
+                    {formData.configUploaded && ' Configuration file was also uploaded.'}
+                  </p>
+                </div>
+                
+                <div style={{ fontSize: '0.875rem', color: '#666' }}>
+                  <p>This VR Room Task will use the same audio files as the previous VR Room Task procedure.</p>
+                  <p>You can still customize the sequence in the next step.</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <label>VR Room Task Audio Set</label>
+                <p style={{ color: '#666', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                  Upload your custom audio files. Optionally upload a configuration file, or build the sequence manually in the next step.
+                </p>
+                
+                <div style={{ 
+                  marginTop: '1.5rem', 
+                  padding: '1rem', 
+                  background: '#f0f9ff', 
+                  border: '1px solid #0ea5e9',
+                  borderRadius: '0.5rem' 
+                }}>
+                  <h4 style={{ marginTop: 0 }}>Upload Custom Audio Files</h4>
+                  <p style={{ fontSize: '0.875rem', color: '#0369a1', marginBottom: '1rem' }}>
+                    Upload your audio files to create a new audio set.
+                  </p>
+                  
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                      Audio Set Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g., vr_room_custom_1, student_protocol_a"
+                      onChange={(e) => handleInputChange('customAudioSetName', e.target.value)}
+                      value={formData.customAudioSetName || ''}
+                      style={{ width: '100%', marginBottom: '0.5rem' }}
+                    />
+                    <small style={{ color: '#64748b' }}>
+                      Use lowercase with underscores (e.g., vr_room_custom_1)
+                    </small>
+                  </div>
+                  
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                      Select Audio Files (MP3/WAV) *
+                    </label>
+                    <input
+                      type="file"
+                      accept=".mp3,.wav"
+                      multiple
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files);
+                        if (files.length === 0) return;
+                        
+                        const audioSetName = formData.customAudioSetName;
+                        if (!audioSetName || !audioSetName.trim()) {
+                          alert('Please enter an audio set name first');
+                          e.target.value = '';
+                          return;
+                        }
+                        
+                        const formDataObj = new FormData();
+                        formDataObj.append('audioSetName', audioSetName);
+                        files.forEach(file => {
+                          formDataObj.append('audioFiles', file);
+                        });
+                        
+                        try {
+                          const response = await fetch('/api/upload-vr-room-audio', {
+                            method: 'POST',
+                            body: formDataObj
+                          });
+                          
+                          const result = await response.json();
+                          if (response.ok && result.success) {
+                            alert(`Successfully uploaded ${files.length} files to ${audioSetName}`);
+                            const updatedData = {
+                              ...formData,
+                              audioSet: audioSetName,
+                              customAudioSetName: audioSetName,
+                              filesUploaded: true,
+                              uploadedFileCount: files.length
+                            };
+                            console.log('Setting audio upload data:', updatedData);
+                            setFormData(updatedData);
+                            onChange(updatedData);
+                          } else {
+                            alert(`Upload failed: ${result.error || 'Unknown error'}`);
+                          }
+                        } catch (error) {
+                          console.error('Upload error:', error);
+                          alert('Error uploading files. Please try again.');
+                        }
+                        
+                        e.target.value = '';
+                      }}
+                      style={{ width: '100%' }}
+                    />
+                    {formData.filesUploaded && (
+                      <div style={{ 
+                        marginTop: '0.5rem', 
+                        padding: '0.75rem', 
+                        background: '#d1fae5',
+                        border: '2px solid #059669',
+                        borderRadius: '0.375rem',
+                        color: '#059669',
+                        fontSize: '0.875rem',
+                        fontWeight: '600'
+                      }}>
+                        ✓ {formData.uploadedFileCount} audio files uploaded successfully
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                      Configuration File (JSON) - Optional
+                    </label>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        
+                        const audioSetName = formData.customAudioSetName;
+                        if (!audioSetName || !audioSetName.trim()) {
+                          alert('Please enter an audio set name first');
+                          e.target.value = '';
+                          return;
+                        }
+                        
+                        const formDataObj = new FormData();
+                        formDataObj.append('audioSetName', audioSetName);
+                        formDataObj.append('configFile', file);
+                        
+                        try {
+                          const response = await fetch('/api/upload-vr-room-config', {
+                            method: 'POST',
+                            body: formDataObj
+                          });
+                          
+                          const result = await response.json();
+                          if (response.ok && result.success) {
+                            alert('Configuration file uploaded successfully');
+                            const updatedData = {
+                              ...formData,
+                              sequenceConfig: result.config,
+                              configUploaded: true
+                            };
+                            console.log('Setting config data:', updatedData);
+                            console.log('Config has steps:', result.config?.steps?.length);
+                            setFormData(updatedData);
+                            onChange(updatedData);
+                          } else {
+                            alert(`Upload failed: ${result.error || 'Unknown error'}`);
+                          }
+                        } catch (error) {
+                          console.error('Upload error:', error);
+                          alert('Error uploading configuration. Please try again.');
+                        }
+                        
+                        e.target.value = '';
+                      }}
+                      style={{ width: '100%' }}
+                    />
+                    {formData.configUploaded && (
+                      <div style={{ 
+                        marginTop: '0.5rem', 
+                        padding: '0.75rem', 
+                        background: '#d1fae5',
+                        border: '2px solid #059669',
+                        borderRadius: '0.375rem',
+                        color: '#059669',
+                        fontSize: '0.875rem',
+                        fontWeight: '600'
+                      }}>
+                        ✓ Configuration uploaded ({formData.sequenceConfig.steps?.length || 0} steps)
+                      </div>
+                    )}
+                    {!formData.configUploaded && (
+                      <small style={{ color: '#64748b', display: 'block', marginTop: '0.5rem' }}>
+                        Skip this to build your sequence manually in the next step
+                      </small>
+                    )}
+                  </div>
+                  
+                  <div style={{ 
+                    background: '#fef3c7', 
+                    padding: '0.75rem', 
+                    borderRadius: '0.375rem',
+                    border: '1px solid #f59e0b' 
+                  }}>
+                    <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600', fontSize: '0.875rem' }}>
+                      File Naming Convention:
+                    </p>
+                    <ul style={{ 
+                      margin: 0, 
+                      paddingLeft: '1.5rem', 
+                      fontSize: '0.75rem',
+                      lineHeight: '1.5' 
+                    }}>
+                      <li><code>01-INST-Practice_Intro.mp3</code> - Instruction audio</li>
+                      <li><code>02-INST-Practice_Repeat.mp3</code> - Next instruction</li>
+                      <li><code>12-Q1-Anxiety_Rating.mp3</code> - Question requiring recording</li>
+                      <li><code>16-INST-Wait_For_Instructions.mp3</code> - Final instruction</li>
+                    </ul>
+                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem' }}>
+                      Files should follow your sequence. Upload config.json to pre-define the sequence, or build it manually in the next step.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      }
+      break;
+
+    case 'sequence-editor':
+      if (procedureId === 'vr-room-task') {
+        const sessionType = configuration['session-type-selection']?.sessionType || 'practice';
+        const audioSetConfig = configuration['audio-set-selection'];
+        
+        // Check if config was uploaded
+        const hasUploadedConfig = audioSetConfig?.configUploaded && audioSetConfig?.sequenceConfig;
+        
+        // Get the full config - either from upload or create empty structure
+        let fullConfig = hasUploadedConfig 
+          ? audioSetConfig.sequenceConfig 
+          : { steps: [] };
+        
+        // Success message if config was uploaded
+        const uploadSuccessMessage = hasUploadedConfig ? (
+          <div style={{ 
+            padding: '1.5rem', 
+            background: '#d1fae5', 
+            borderRadius: '0.5rem',
+            border: '2px solid #059669',
+            marginBottom: '1.5rem'
+          }}>
+            <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600', color: '#059669', fontSize: '1rem' }}>
+              ✓ Configuration File Uploaded
+            </p>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: '#065f46' }}>
+              Your config file has been loaded with <strong>{fullConfig.steps.length} steps</strong> defined. 
+              You can proceed to the next step, or use the editor below to make adjustments.
+            </p>
+          </div>
+        ) : (
+          <div style={{ 
+            padding: '1.5rem', 
+            background: '#eff6ff', 
+            borderRadius: '0.5rem',
+            border: '2px solid #3b82f6',
+            marginBottom: '1.5rem'
+          }}>
+            <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600', color: '#1e40af', fontSize: '1rem' }}>
+              Build Your Sequence
+            </p>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: '#1e3a8a' }}>
+              No configuration file was uploaded. Use the editor below to build your sequence from scratch.
+            </p>
+          </div>
+        );
+        
+        // Filter steps based on session type if we have uploaded config
+        const allSteps = fullConfig.steps || [];
+        const relevantStepIndices = hasUploadedConfig 
+          ? allSteps
+              .map((step, index) => ({ step, originalIndex: index }))
+              .filter(({ step }) => step.sessionTypes && step.sessionTypes.includes(sessionType))
+              .map(({ originalIndex }) => originalIndex)
+          : []; // Empty for manual building
+        
+        // Initialize form data with config if not already set
+        if (!formData.editableConfig) {
+          handleInputChange('editableConfig', {
+            steps: hasUploadedConfig ? [...allSteps] : [],
+            relevantIndices: hasUploadedConfig ? relevantStepIndices : []
+          });
+        }
+        
+        const editableSteps = formData.editableConfig?.steps || [];
+        const relevantIndices = formData.editableConfig?.relevantIndices || [];
+        
+        // For manual building, we show all steps (relevantIndices = all indices)
+        const displayIndices = hasUploadedConfig 
+          ? relevantIndices 
+          : editableSteps.map((_, idx) => idx);
+        
+        const updateStep = (originalIndex, field, value) => {
+          const newSteps = [...editableSteps];
+          newSteps[originalIndex] = {
+            ...newSteps[originalIndex],
+            [field]: value
+          };
+          handleInputChange('editableConfig', {
+            steps: newSteps,
+            relevantIndices: hasUploadedConfig ? relevantIndices : newSteps.map((_, idx) => idx)
+          });
+        };
+        
+        const addStep = () => {
+          const newStep = {
+            stepType: "timeout",
+            sessionTypes: [sessionType],
+            timeout: 10,
+            beepBefore: false,
+            beepAfter: false,
+            recording: false
+          };
+          
+          const newSteps = [...editableSteps, newStep];
+          const newIndices = hasUploadedConfig 
+            ? [...relevantIndices, newSteps.length - 1]
+            : newSteps.map((_, idx) => idx);
+          
+          handleInputChange('editableConfig', {
+            steps: newSteps,
+            relevantIndices: newIndices
+          });
+        };
+        
+        const removeStep = (originalIndex) => {
+          const newSteps = editableSteps.filter((_, i) => i !== originalIndex);
+          const newIndices = hasUploadedConfig
+            ? relevantIndices
+                .filter(i => i !== originalIndex)
+                .map(i => i > originalIndex ? i - 1 : i)
+            : newSteps.map((_, idx) => idx);
+          
+          handleInputChange('editableConfig', {
+            steps: newSteps,
+            relevantIndices: newIndices
+          });
+        };
+        
+        const moveStep = (originalIndex, direction) => {
+          const currentPos = displayIndices.indexOf(originalIndex);
+          if (
+            (direction === 'up' && currentPos === 0) ||
+            (direction === 'down' && currentPos === displayIndices.length - 1)
+          ) {
+            return;
+          }
+          
+          if (hasUploadedConfig) {
+            // For uploaded config, swap in relevantIndices
+            const newIndices = [...relevantIndices];
+            const swapPos = direction === 'up' ? currentPos - 1 : currentPos + 1;
+            [newIndices[currentPos], newIndices[swapPos]] = [newIndices[swapPos], newIndices[currentPos]];
+            
+            handleInputChange('editableConfig', {
+              steps: editableSteps,
+              relevantIndices: newIndices
+            });
+          } else {
+            // For manual building, actually swap steps in array
+            const newSteps = [...editableSteps];
+            const swapPos = direction === 'up' ? currentPos - 1 : currentPos + 1;
+            [newSteps[currentPos], newSteps[swapPos]] = [newSteps[swapPos], newSteps[currentPos]];
+            
+            handleInputChange('editableConfig', {
+              steps: newSteps,
+              relevantIndices: newSteps.map((_, idx) => idx)
+            });
+          }
+        };
+        
+        return (
+          <div className="form-group">
+            {uploadSuccessMessage}
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: '1rem'
+            }}>
+              <div>
+                <h4 style={{ margin: 0 }}>Sequence Editor</h4>
+                <p style={{ color: '#666', margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>
+                  {hasUploadedConfig 
+                    ? `Editing ${sessionType} session (${displayIndices.length} steps)` 
+                    : `Building sequence for ${sessionType} session (${editableSteps.length} steps)`}
+                </p>
+              </div>
+            </div>
+            
+            {editableSteps.length === 0 ? (
+              <div style={{
+                padding: '2rem',
+                textAlign: 'center',
+                background: '#f9fafb',
+                border: '2px dashed #d1d5db',
+                borderRadius: '0.5rem'
+              }}>
+                <p style={{ margin: 0, color: '#6b7280' }}>
+                  No steps yet. Click "Add Step" to start building your sequence.
+                </p>
+              </div>
+            ) : (
+              <div style={{ 
+                maxHeight: '500px', 
+                overflowY: 'auto', 
+                border: '1px solid #e2e8f0',
+                borderRadius: '0.5rem',
+                padding: '1rem',
+                background: '#f9fafb'
+              }}>
+                {displayIndices.map((originalIndex, displayIndex) => {
+                  const step = editableSteps[originalIndex];
+                  const isRecording = step.recording || step.stepType === 'recording';
+                  const isTimeout = step.stepType === 'timeout';
+                  
+                  return (
+                    <div
+                      key={originalIndex}
+                      style={{
+                        marginBottom: '1rem',
+                        padding: '1rem',
+                        background: isRecording ? '#fef3c7' : '#ffffff',
+                        borderRadius: '0.5rem',
+                        border: `2px solid ${isRecording ? '#f59e0b' : '#e2e8f0'}`,
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                      }}
+                    >
+                      {/* Step Header */}
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        marginBottom: '0.75rem',
+                        paddingBottom: '0.75rem',
+                        borderBottom: '1px solid #e2e8f0'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ 
+                            fontWeight: '700', 
+                            fontSize: '1.125rem',
+                            color: '#1f2937'
+                          }}>
+                            Step {displayIndex + 1}
+                          </span>
+                          {isRecording && (
+                            <span style={{ 
+                              fontSize: '0.75rem', 
+                              background: '#f59e0b', 
+                              color: 'white',
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '0.25rem',
+                              fontWeight: '600'
+                            }}>
+                              RECORDING
+                            </span>
+                          )}
+                          {isTimeout && !step.file && (
+                            <span style={{ 
+                              fontSize: '0.75rem', 
+                              background: '#6b7280', 
+                              color: 'white',
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '0.25rem',
+                              fontWeight: '600'
+                            }}>
+                              TIMEOUT
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => moveStep(originalIndex, 'up')}
+                            disabled={displayIndex === 0}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              background: displayIndex === 0 ? '#e5e7eb' : '#f3f4f6',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '0.25rem',
+                              cursor: displayIndex === 0 ? 'not-allowed' : 'pointer',
+                              fontSize: '0.875rem'
+                            }}
+                            title="Move up"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveStep(originalIndex, 'down')}
+                            disabled={displayIndex === displayIndices.length - 1}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              background: displayIndex === displayIndices.length - 1 ? '#e5e7eb' : '#f3f4f6',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '0.25rem',
+                              cursor: displayIndex === displayIndices.length - 1 ? 'not-allowed' : 'pointer',
+                              fontSize: '0.875rem'
+                            }}
+                            title="Move down"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeStep(originalIndex)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fecaca',
+                              borderRadius: '0.25rem',
+                              cursor: 'pointer',
+                              fontSize: '0.875rem',
+                              fontWeight: '600'
+                            }}
+                            title="Delete step"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Step Type Selector */}
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        <label style={{ 
+                          display: 'block', 
+                          fontSize: '0.875rem', 
+                          fontWeight: '600',
+                          color: '#374151',
+                          marginBottom: '0.25rem'
+                        }}>
+                          Step Type
+                        </label>
+                        <select
+                          value={step.file ? 'audio' : step.stepType}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            const newSteps = [...editableSteps];
+                            
+                            if (value === 'audio') {
+                              newSteps[originalIndex] = {
+                                ...newSteps[originalIndex],
+                                file: newSteps[originalIndex].file || 'new-file.mp3',
+                                stepType: undefined
+                              };
+                            } else {
+                              newSteps[originalIndex] = {
+                                ...newSteps[originalIndex],
+                                file: undefined,
+                                stepType: value
+                              };
+                            }
+                            
+                            handleInputChange('editableConfig', {
+                              steps: newSteps,
+                              relevantIndices: hasUploadedConfig ? relevantIndices : newSteps.map((_, idx) => idx)
+                            });
+                          }}
+                          style={{ 
+                            width: '100%',
+                            padding: '0.5rem',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.875rem'
+                          }}
+                        >
+                          <option value="audio">Audio File</option>
+                          <option value="timeout">Timeout (Silent Wait)</option>
+                          <option value="recording">Recording Only</option>
+                        </select>
+                      </div>
+                      
+                      {/* Audio File Input */}
+                      {(step.file !== undefined && step.stepType !== 'timeout' && step.stepType !== 'recording') && (
+                        <div style={{ marginBottom: '0.75rem' }}>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '0.875rem', 
+                            fontWeight: '600',
+                            color: '#374151',
+                            marginBottom: '0.25rem'
+                          }}>
+                            Audio File
+                          </label>
+                          <AudioFileSelector
+                            audioSetName={audioSetConfig?.customAudioSetName}
+                            selectedFile={step.file || ''}
+                            onChange={(file) => updateStep(originalIndex, 'file', file)}
+                          />
+                        </div>
+                      )}
+                      
+                      {/* Configuration Grid */}
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(2, 1fr)', 
+                        gap: '0.75rem',
+                        marginBottom: '0.75rem'
+                      }}>
+                        {/* Timeout */}
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '600',
+                            color: '#6b7280',
+                            marginBottom: '0.25rem'
+                          }}>
+                            Timeout (seconds)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={step.timeout || 0}
+                            onChange={(e) => updateStep(originalIndex, 'timeout', parseInt(e.target.value) || 0)}
+                            style={{ 
+                              width: '100%',
+                              padding: '0.5rem',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '0.375rem',
+                              fontSize: '0.875rem'
+                            }}
+                          />
+                          <small style={{ color: '#6b7280', fontSize: '0.7rem' }}>
+                            {step.file ? 'Wait after audio' : 'Wait duration'}
+                          </small>
+                        </div>
+                        
+                        {/* Recording Duration */}
+                        {isRecording && (
+                          <div>
+                            <label style={{ 
+                              display: 'block', 
+                              fontSize: '0.75rem', 
+                              fontWeight: '600',
+                              color: '#6b7280',
+                              marginBottom: '0.25rem'
+                            }}>
+                              Recording Duration (s)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={step.recordingDuration || 90}
+                              onChange={(e) => updateStep(originalIndex, 'recordingDuration', parseInt(e.target.value) || 90)}
+                              style={{ 
+                                width: '100%',
+                                padding: '0.5rem',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.875rem'
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Checkboxes */}
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(2, 1fr)', 
+                        gap: '0.5rem'
+                      }}>
+                        <label style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          fontSize: '0.875rem',
+                          cursor: 'pointer'
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={step.beepBefore || false}
+                            onChange={(e) => updateStep(originalIndex, 'beepBefore', e.target.checked)}
+                            style={{ marginRight: '0.375rem' }}
+                          />
+                          Beep Before
+                        </label>
+                        
+                        <label style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          fontSize: '0.875rem',
+                          cursor: 'pointer'
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={step.beepAfter || false}
+                            onChange={(e) => updateStep(originalIndex, 'beepAfter', e.target.checked)}
+                            style={{ marginRight: '0.375rem' }}
+                          />
+                          Beep After
+                        </label>
+                      </div>
+                      
+                      {/* Warning Beep for Recordings */}
+                      {isRecording && step.recordingDuration > 30 && (
+                        <div style={{ marginTop: '0.75rem' }}>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '600',
+                            color: '#6b7280',
+                            marginBottom: '0.25rem'
+                          }}>
+                            Warning Beep At (seconds)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={step.recordingDuration - 1}
+                            value={step.warningBeepAt || Math.max(0, (step.recordingDuration || 90) - 15)}
+                            onChange={(e) => updateStep(originalIndex, 'warningBeepAt', parseInt(e.target.value) || 0)}
+                            placeholder="e.g., 75"
+                            style={{ 
+                              width: '150px',
+                              padding: '0.5rem',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '0.375rem',
+                              fontSize: '0.875rem'
+                            }}
+                          />
+                          <small style={{ color: '#6b7280', fontSize: '0.7rem', marginLeft: '0.5rem' }}>
+                            Optional warning before recording ends
+                          </small>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            {/* Summary */}
+            <div style={{ 
+              marginTop: '1rem', 
+              padding: '1rem', 
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: '0.5rem'
+            }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600', fontSize: '0.875rem' }}>
+                Sequence Summary:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '1.5rem', fontSize: '0.875rem', lineHeight: '1.6' }}>
+                <li>{editableSteps.filter(s => s.file).length} audio file steps</li>
+                <li>{editableSteps.filter(s => s.stepType === 'timeout').length} timeout-only steps</li>
+                <li>{editableSteps.filter(s => s.stepType === 'recording').length} recording steps</li>
+                {/* <li>Total duration: ~{editableSteps.reduce((sum, s) => sum + (s.timeout || 0) + (s.recordingDuration || 0), 0)} seconds</li> */}
+              </ul>
+            </div>
+            
+            {/* Add Step Button at Bottom */}
+            <div style={{ 
+              marginTop: '1.5rem', 
+              textAlign: 'center',
+              paddingTop: '1rem',
+              borderTop: '2px solid #e2e8f0'
+            }}>
+              <button
+                type="button"
+                onClick={addStep}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  background: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.375rem',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '1rem'
+                }}
+              >
+                + Add Step
+              </button>
+            </div>
+          </div>
+        );
+      }
+      break;
+
+    case 'task-description':
+      if (procedureId === 'vr-room-task') {
+        return (
+          <div className="form-group">
+            <label className="wizard-mt">Experimental Condition Marker *</label>
+            <input 
+              type="text"
+              placeholder="e.g., vr_room_baseline, vr_room_nature, vr_room_urban"
+              value={formData.conditionMarker || ''}
+              onChange={(e) => handleInputChange('conditionMarker', e.target.value)}
+              className="wizard-input-full wizard-mb-sm"
+            />
+            <small className="wizard-help-text-mb">
+              This condition marker will be used to identify the experimental condition for this VR room task.
+            </small>
+
+            <div className="wizard-highlight-box">
+              <p><strong>Examples of VR room condition markers:</strong></p>
+              <ul className="wizard-list-small">
+                <li><code className="wizard-code">vr_room_baseline</code> - baseline VR environment</li>
+                <li><code className="wizard-code">vr_room_nature</code> - natural environment room</li>
+                <li><code className="wizard-code">vr_room_urban</code> - urban environment room</li>
+                <li><code className="wizard-code">vr_room_neutral</code> - neutral grey room</li>
+              </ul>
+            </div>
+            
+            <label className="wizard-mt">Task Notes (Optional)</label>
+            <textarea
+              placeholder="Add any additional notes about this VR room task configuration..."
+              value={formData.taskNotes || ''}
+              onChange={(e) => handleInputChange('taskNotes', e.target.value)}
+              className="wizard-input-full"
+              rows="3"
+            />
+          </div>
+        );
+      }
+      return null;
     case 'question-set':
       if(procedureId === 'ser-baseline'){
         return (
@@ -2029,8 +3052,9 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                   }}>
                     <li><code>1-Intro.mp3</code> - Introduction audio</li>
                     <li><code>2-PreQuestions.mp3</code> - Post-observation instructions</li>
-                    <li><code>3-Question_1.mp3</code> - First question</li>
-                    <li><code>4-Question_2.mp3</code> - Second question</li>
+                    <li><code>3-Q1.mp3</code> - First question</li>
+                    <li><code>4-Q2.mp3</code> - Second question</li>
+                    <li><code>5-Q3.mp3</code> - Third question (and so on...)</li>
                     <li><code>Wait_For_Instructions.mp3</code> - Final instructions</li>
                   </ul>
                   <p style={{ 
@@ -2038,7 +3062,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                     fontSize: '0.75rem', 
                     fontStyle: 'italic' 
                   }}>
-                    Files must be numbered sequentially. Question files must contain "Question_" in the filename.
+                    File prefixes must be numbered sequentially (1-, 2-, 3-, 4-, etc.). Question files (starting with prefix 3+) must contain "Q1", "Q2", "Q3" in the filename.
                   </p>
                 </div>
               </div>
@@ -2635,20 +3659,20 @@ function ExperimentBuilder({ onBack }) {
   };
 
   const handleConfigureProcedure = (procedure) => {
-    // If configuring data-collection, pass all procedures for audio detection
-    if (procedure.id === 'data-collection') {
-      const enrichedProcedure = {
-        ...procedure,
-        configuration: {
-          ...procedure.configuration,
-          _allProcedures: selectedProcedures.filter(p => p.id !== 'data-collection')
-        }
-      };
-      setCurrentWizardProcedure(enrichedProcedure);
-    } else {
-      setCurrentWizardProcedure(procedure);
-    }
-  };
+      // Pass all procedures for detection logic (data-collection needs it for audio, vr-room-task needs it for detecting existing uploads)
+      if (procedure.id === 'data-collection' || procedure.id === 'vr-room-task') {
+        const enrichedProcedure = {
+          ...procedure,
+          configuration: {
+            ...procedure.configuration,
+            _allProcedures: selectedProcedures
+          }
+        };
+        setCurrentWizardProcedure(enrichedProcedure);
+      } else {
+        setCurrentWizardProcedure(procedure);
+      }
+    };
 
   const handleWizardSave = (configuration) => {
     setSelectedProcedures(prev =>

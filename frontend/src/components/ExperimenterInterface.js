@@ -3,6 +3,7 @@ import './ExperimenterInterface.css';
 import { setDevice, fetchAudioDevices, setEventMarker } from './utils/helpers';
 import PRSComponent from './procedures/PRSComponent';
 import MainTaskComponent from './procedures/MainTaskComponent';
+import VRRoomTaskComponent from './procedures/VRRoomTaskComponent';
 
 function PreTestInstructionsWizard({ 
   onClose, 
@@ -979,10 +980,11 @@ function SettingsPanel({
   );
 }
 
-function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, currentProcedureIndex, sessionId, onTaskComplete }) {
+function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, currentProcedureIndex, sessionId, onTaskComplete, procedureActive }) {
   const isPRSProcedure = currentProcedure && currentProcedure.id === 'prs';
   const isMainTaskProcedure = currentProcedure && currentProcedure.id === 'main-task';
-  
+  const isVRRoomTaskProcedure = currentProcedure && currentProcedure.id === 'vr-room-task';
+
   const getPRSSequenceNumber = (currentProcedureIndex, experimentData) => {
     if (!experimentData?.procedures) return 1;
     
@@ -998,6 +1000,8 @@ function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, current
       return currentProcedure.configuration?.['question-set']?.questionSet || 'prs_1';
     } else if (currentProcedure?.id === 'main-task') {
       return currentProcedure.configuration?.['question-set']?.questionSet || 'main_task_1';
+    } else if (currentProcedure?.id === 'vr-room-task') {
+      return currentProcedure.configuration?.['audio-set-selection']?.audioSet || 'vr_room_task_1';
     }
     return undefined;
   };
@@ -1028,6 +1032,7 @@ function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, current
                 sessionId={sessionId}
                 onTaskComplete={onTaskComplete}
                 isExperimenterMode={true}
+                procedureActive={procedureActive}
               />
             </div>
           )}
@@ -1041,10 +1046,23 @@ function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, current
                 sessionId={sessionId}
                 onTaskComplete={onTaskComplete}
                 isExperimenterMode={true}
+                procedureActive={procedureActive}
               />
             </div>
           )}
-          
+          {isVRRoomTaskProcedure && (
+            <div className="vr-room-task-panel-section">
+              <h4>VR Room Task Control</h4>
+              <VRRoomTaskComponent
+                audioSet={getQuestionSet()}
+                procedure={currentProcedure}
+                sessionId={sessionId}
+                onTaskComplete={onTaskComplete}
+                isExperimenterMode={true}
+                procedureActive={procedureActive}
+              />
+            </div>
+          )}
           <div className="tool-section">
             {/* Other tool content can go here */}
           </div>
@@ -1068,6 +1086,7 @@ function ExperimenterInterface() {
   const [participantRegistered, setParticipantRegistered] = useState(false);
   const [showSetupForm, setShowSetupForm] = useState(true);
   const [isToolPanelOpen, setIsToolPanelOpen] = useState(false);
+  const [toolPanelProcedureActive, setToolPanelProcedureActive] = useState(false);
   const [emotiBitLoading, setEmotiBitLoading] = useState(false);
   const [vernierLoading, setVernierLoading] = useState(false);
   const [polarLoading, setPolarLoading] = useState(false);
@@ -1944,6 +1963,7 @@ useEffect(() => {
     const procedureName = selectedProcedureForInstructions.name;
 
     setCurrentProcedure(index);
+    setToolPanelProcedureActive(true);
     console.log('Skipping instructions for procedure:', index, procedureName);
     
     if (selectedProcedureForInstructions.id !== 'prs') {
@@ -1980,6 +2000,7 @@ useEffect(() => {
     const procedureName = selectedProcedureForInstructions.name;
 
     setCurrentProcedure(index);
+    setToolPanelProcedureActive(true);
     if (selectedProcedureForInstructions.id !== 'prs') {
       setEventMarker(procedureName);
       console.log('Setting current event marker to:', index, procedureName);
@@ -2556,6 +2577,7 @@ useEffect(() => {
           experimentData={experimentData}
           currentProcedureIndex={currentProcedure}
           sessionId={currentSession}
+          procedureActive={toolPanelProcedureActive}
           onTaskComplete={async () => {
             try {
               const response = await fetch(`/api/sessions/${currentSession}/complete-procedure`, {
