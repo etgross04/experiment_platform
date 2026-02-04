@@ -683,6 +683,10 @@ def upload_vr_room_config():
         if not audio_set_name:
             return jsonify({'success': False, 'error': 'Audio set name is required'}), 400
         
+        # Get optional config name (defaults to generic config.json)
+        config_name = request.form.get('configName', 'config').strip()
+        config_name = "".join(c for c in config_name if c.isalnum() or c in ('_', '-')).lower()
+        
         audio_set_name = "".join(c for c in audio_set_name if c.isalnum() or c in ('_', '-')).lower()
         
         config_file = request.files['configFile']
@@ -690,11 +694,15 @@ def upload_vr_room_config():
         # Read and validate JSON
         config_data = json.load(config_file.stream)
         
-        # Save to audio set directory
+        # Save to audio set directory with unique name
         audio_dir = os.path.join('static', 'audio_files', 'vr_room_audio', audio_set_name)
         os.makedirs(audio_dir, exist_ok=True)
         
-        config_path = os.path.join(audio_dir, 'config.json')
+        # Generate unique config filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        config_filename = f"config_{config_name}_{timestamp}.json"
+        config_path = os.path.join(audio_dir, config_filename)
+        
         with open(config_path, 'w') as f:
             json.dump(config_data, f, indent=2)
         
@@ -703,16 +711,13 @@ def upload_vr_room_config():
         return jsonify({
             'success': True,
             'message': 'Configuration uploaded successfully',
-            'config': config_data
+            'config': config_data,
+            'config_filename': config_filename
         })
-        
-    except json.JSONDecodeError as e:
-        return jsonify({'success': False, 'error': f'Invalid JSON: {str(e)}'}), 400
+    
     except Exception as e:
-        print(f"Config upload error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+        print(f"Error uploading VR room config: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
     
 @app.route('/set_event_marker', methods=['POST'])
 def set_event_marker():
@@ -2028,6 +2033,57 @@ def process_ser_answer() -> Response:
     
     except Exception as e:
         print(f"Error in process_ser_answer: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/vr-room/stop-recording', methods=['POST'])
+def stop_vr_room_recording() -> Response:
+    """Stop recording for VR Room Task step and save"""
+    global subject_manager, recording_manager, audio_file_manager
+
+    if recording_manager is None:
+        return jsonify({'status': 'error', 'message': 'Recording manager not initialized'}), 400
+
+    try:
+        data = request.get_json()
+        step_name = data.get('stepName', 'unknown_step')
+        event_marker = data.get('eventMarker', 'vr_room_task')
+        condition = data.get('condition', 'None')
+        
+        recording_manager.stop_recording()
+        
+        ts = recording_manager.timestamp
+        uts = recording_manager.unix_timestamp
+        end_time = recording_manager.end_timestamp_iso
+        end_time_unix = recording_manager.end_timestamp_unix
+        
+        print(f"Stop time from recording manager: {end_time}")
+        
+        id = subject_manager.subject_id if subject_manager.subject_id else "unknown"
+        file_name = f"{id}_{ts}_vr_room_task_{step_name}.wav"
+
+        if subject_manager:
+            subject_manager.append_data({
+                'unix_timestamp': uts,
+                'timestamp': ts, 
+                'time_stopped': end_time, 
+                'time_stopped_unix': end_time_unix,
+                'event_marker': event_marker, 
+                'condition': condition, 
+                'audio_file': file_name
+            })
+        
+        if audio_file_manager:
+            audio_file_manager.save_audio_file(file_name)
+
+        print(f"VR Room recording saved: {file_name}")
+
+        return jsonify({
+            'status': 'Recording stopped and saved.',
+            'file_name': file_name
+        })
+    
+    except Exception as e:
+        print(f"Error in stop_vr_room_recording: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 400
     
 @app.route('/reset_ser_baseline', methods=['POST'])

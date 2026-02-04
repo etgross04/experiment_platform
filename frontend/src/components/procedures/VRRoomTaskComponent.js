@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { recordTaskAudio, startRecording, playBeep, setCondition, setEventMarker } from '../utils/helpers.js';
+import { startRecording, playBeep, setCondition, setEventMarker } from '../utils/helpers.js';
 import './MainTaskComponent.css'; // Reuse same styling
 
 const VRRoomTaskComponent = ({ 
@@ -212,8 +212,11 @@ const VRRoomTaskComponent = ({
       
       console.log(`Recording started for step ${stepIndex + 1}`);
 
-      // Warning beeps 15 seconds before end
-      const warningTime = (step.recordingDuration || 90) - 15;
+      // Warning beeps at configured time (defaults to 15 seconds before end if not configured)
+      const warningTime = step.warningBeepAt !== undefined 
+        ? step.warningBeepAt 
+        : Math.max(0, (step.recordingDuration || 90) - 15);
+        
       beepTimeoutRef.current = setTimeout(() => {
         playBeep();
         setTimeout(playBeep, 500);
@@ -233,11 +236,33 @@ const VRRoomTaskComponent = ({
     setIsRecording(false);
     console.log(`Stopping recording for step ${stepIndex + 1}`);
     
-    recordTaskAudio(eventMarker, condition, 'stop', `step_${stepIndex + 1}`, (message) => {
-      setRecordingStatus(message);
-    });
+    const step = sequenceConfig.steps[stepIndex];
+    const stepName = step.file ? step.file.replace(/\.[^/.]+$/, "") : `step_${stepIndex + 1}`;
     
-    setRecordingStatus("Recording stopped.");
+    // Call VR Room-specific endpoint
+    fetch('/api/vr-room/stop-recording', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stepName: stepName,
+        eventMarker: eventMarker,
+        condition: condition
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status && data.file_name) {
+        console.log(`Recording saved: ${data.file_name}`);
+        setRecordingStatus("Recording stopped.");
+      } else {
+        console.error('Failed to stop recording:', data.message);
+        setRecordingStatus('Failed to save recording');
+      }
+    })
+    .catch(error => {
+      console.error("Error stopping recording:", error);
+      setRecordingStatus(`Error: ${error.message}`);
+    });
     
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);

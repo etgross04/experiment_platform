@@ -2092,7 +2092,7 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
               <>
                 <label>VR Room Task Audio Set</label>
                 <p style={{ color: '#666', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                  Upload your custom audio files. Optionally upload a configuration file, or build the sequence manually in the next step.
+                  Upload your custom audio files. These files will be <strong>shared across all VR Room Task procedures</strong> in this experiment. Optionally upload a configuration file for <strong>this specific VR room procedure</strong>, or build the sequence manually in the next step.
                 </p>
                 
                 <div style={{ 
@@ -2199,6 +2199,10 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
                       Configuration File (JSON) - Optional
                     </label>
+                    <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                      <strong>Important:</strong> This config file applies to <strong>this VR room procedure only</strong>. 
+                      Each VR Room Task procedure can have its own unique configuration using the same shared audio files.
+                    </p>
                     <input
                       type="file"
                       accept=".json"
@@ -2649,8 +2653,8 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
                           }}
                         >
                           <option value="audio">Audio File</option>
-                          <option value="timeout">Timeout (Silent Wait)</option>
-                          <option value="recording">Recording Only</option>
+                          <option value="timeout">Wait Period (during subject activity)</option>
+                          <option value="recording">Recording Period</option>
                         </select>
                       </div>
                       
