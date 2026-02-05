@@ -1518,6 +1518,14 @@ def process_procedure_for_psychopy(proc_data):
             'sartVersion': proc_data.get('configuration', {}).get('task-setup', {}).get('sartVersion'),
             'targetDigit': proc_data.get('configuration', {}).get('task-setup', {}).get('targetDigit'),
             
+            # VR Room Task specific fields
+            'vrRoomSessionType': proc_data.get('configuration', {}).get('session-type-selection', {}).get('sessionType'),
+            'vrRoomAudioSet': proc_data.get('configuration', {}).get('audio-set-selection', {}).get('audioSet'),
+            'vrRoomSequenceConfig': proc_data.get('configuration', {}).get('audio-set-selection', {}).get('sequenceConfig'),
+            'vrRoomEditableConfig': proc_data.get('configuration', {}).get('sequence-editor', {}).get('editableConfig'),
+            'vrRoomConditionMarker': proc_data.get('configuration', {}).get('task-description', {}).get('conditionMarker'),
+            'vrRoomTaskNotes': proc_data.get('configuration', {}).get('task-description', {}).get('taskNotes'),
+            
             # Store complete configuration for future reference
             'rawConfiguration': proc_data.get('configuration', {}),
 

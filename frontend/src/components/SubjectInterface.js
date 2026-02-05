@@ -816,7 +816,7 @@ function SubjectInterface() {
       );
     }
 
-    if (currentProcedure && (currentProcedure.id === 'prs' || currentProcedure.id === 'main-task')) {
+    if (currentProcedure && (currentProcedure.id === 'prs' || currentProcedure.id === 'main-task' || currentProcedure.id === 'vr-room-task')) {
       return (
         <div className="waiting-screen">
           <h2>The experiment supervisor will now assist you with the next procedure.</h2>

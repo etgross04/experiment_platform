@@ -1054,6 +1054,7 @@ function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, current
             <div className="vr-room-task-panel-section">
               <h4>VR Room Task Control</h4>
               <VRRoomTaskComponent
+                key={currentProcedure?.instanceId}
                 audioSet={getQuestionSet()}
                 procedure={currentProcedure}
                 sessionId={sessionId}
@@ -1423,6 +1424,7 @@ useEffect(() => {
   console.log('currentSession:', currentSession);
   console.log('experimentData:', experimentData);
   console.log('experimentData.procedures:', experimentData?.procedures);
+  console.log('experimentData.dataCollectionMethods:', experimentData?.dataCollectionMethods);
   
   if (!currentSession || !experimentData || !experimentData.procedures) {
     console.log('Early return - missing data');
@@ -1432,63 +1434,66 @@ useEffect(() => {
     return;
   }
   
-  const needsAudio = experimentData.procedures.some(proc => {
-    console.log('Checking procedure:', proc.name, 'id:', proc.id);
-    console.log('  configuration:', proc.configuration);
-    console.log('  wizardData:', proc.wizardData);
-    
-    if (proc.id === 'prs' || proc.name.toLowerCase().includes('perceived restorativeness')) {
-      console.log('  AUDIO NEEDED: PRS procedure');
-      return true;
-    }
-
-    if (proc.id === 'main-task' || proc.name.toLowerCase().includes('main experimental task')) {
-      console.log('  AUDIO NEEDED: Main Task procedure');
-      return true;
-    }
-
-    // if (proc.configuration?.["task-description"]?.selectedTasks) {
-    //   const tasks = proc.configuration["task-description"].selectedTasks;
-    //   console.log('  task-description tasks:', tasks);
-    //   if (tasks.some(task => task.includes('Audio'))) {
-    //     console.log('  AUDIO NEEDED: task-description contains Audio');
-    //     return true;
-    //   }
-    // }
-    
-    if (proc.wizardData?.recordingDuration || proc.id === 'baseline-recording') {
-      console.log('  AUDIO NEEDED: wizardData.recordingDuration or baseline-recording');
-      return true;
-    }
-
-    if (proc.configuration?.["stressor-type"]?.stressorType === "Mental Arithmetic Task") {
-      console.log('  AUDIO NEEDED: Mental Arithmetic Task');
-      return true;
-    }
-    if (proc.id === 'stressor' || proc.name.toLowerCase().includes('stress')) {
-      console.log('  AUDIO NEEDED: stressor procedure');
-      return true;
-    }
-    
-    if (proc.id === 'ser-baseline' || proc.name.toLowerCase().includes('ser baseline')) {
-      console.log('  AUDIO NEEDED: SER baseline procedure');
-      return true;
-    }
-    
-    console.log('  No audio needed for this procedure');
-    return false;
-  });
+  // CHECK dataCollectionMethods FIRST (source of truth from Builder)
+  let needsAudio = experimentData.dataCollectionMethods?.audio_ser || false;
+  console.log('Audio from dataCollectionMethods.audio_ser:', needsAudio);
   
-    console.log('Final needsAudio result:', needsAudio);
-    
-    if (needsAudio) {
-      console.log('Calling loadAudioDevices...');
-      loadAudioDevices();
-    } else {
-      console.log('Audio not needed - not loading devices');
-    }
-    console.log('=== END AUDIO DETECTION DEBUG ===');
-  }, [currentSession, experimentData]);
+  // If not set in dataCollectionMethods, check individual procedures as fallback
+  if (!needsAudio) {
+    needsAudio = experimentData.procedures.some(proc => {
+      console.log('Checking procedure:', proc.name, 'id:', proc.id);
+      console.log('  configuration:', proc.configuration);
+      console.log('  wizardData:', proc.wizardData);
+      
+      if (proc.id === 'prs' || proc.name.toLowerCase().includes('perceived restorativeness')) {
+        console.log('  AUDIO NEEDED: PRS procedure');
+        return true;
+      }
+
+      if (proc.id === 'main-task' || proc.name.toLowerCase().includes('main experimental task')) {
+        console.log('  AUDIO NEEDED: Main Task procedure');
+        return true;
+      }
+
+      if (proc.id === 'vr-room-task') {
+        console.log('  AUDIO NEEDED: VR Room Task procedure');
+        return true;
+      }
+      
+      if (proc.wizardData?.recordingDuration || proc.id === 'baseline-recording') {
+        console.log('  AUDIO NEEDED: wizardData.recordingDuration or baseline-recording');
+        return true;
+      }
+
+      if (proc.configuration?.["stressor-type"]?.stressorType === "Mental Arithmetic Task") {
+        console.log('  AUDIO NEEDED: Mental Arithmetic Task');
+        return true;
+      }
+      if (proc.id === 'stressor' || proc.name.toLowerCase().includes('stress')) {
+        console.log('  AUDIO NEEDED: stressor procedure');
+        return true;
+      }
+      
+      if (proc.id === 'ser-baseline' || proc.name.toLowerCase().includes('ser baseline')) {
+        console.log('  AUDIO NEEDED: SER baseline procedure');
+        return true;
+      }
+      
+      console.log('  No audio needed for this procedure');
+      return false;
+    });
+  }
+  
+  console.log('Final needsAudio result:', needsAudio);
+  
+  if (needsAudio) {
+    console.log('Calling loadAudioDevices...');
+    loadAudioDevices();
+  } else {
+    console.log('Audio not needed - not loading devices');
+  }
+  console.log('=== END AUDIO DETECTION DEBUG ===');
+}, [currentSession, experimentData]);
 
   useEffect(() => {
     if (!currentSession) return;
@@ -1560,15 +1565,15 @@ useEffect(() => {
   }, [currentSession, showSetupForm]);
 
   useEffect(() => {
-    if (experimentData && experimentData.procedures && experimentData.procedures[currentProcedure]) {
-      const procedure = experimentData.procedures[currentProcedure];
-      
-      if (procedure.id === 'prs' || procedure.id === 'main-task') {
-        setIsToolPanelOpen(true);
-        console.log(`Auto-opening tool panel for ${procedure.id} procedure`);
-      }
+  if (experimentData && experimentData.procedures && experimentData.procedures[currentProcedure]) {
+    const procedure = experimentData.procedures[currentProcedure];
+    
+    if (procedure.id === 'prs' || procedure.id === 'main-task' || procedure.id === 'vr-room-task') {
+      setIsToolPanelOpen(true);
+      console.log(`Auto-opening tool panel for ${procedure.id} procedure`);
     }
-  }, [currentProcedure, experimentData]);
+  }
+}, [currentProcedure, experimentData]);
 
   useEffect(() => {
     if (!currentSession || showSetupForm) return;
@@ -2115,6 +2120,10 @@ useEffect(() => {
         allMetrics.add('audio_ser');
       }
       
+      if (proc.id === 'vr-room-task') {
+        allMetrics.add('audio_ser');
+      }
+
       if (proc.configuration?.["task-description"]?.selectedTasks) {
         const tasks = proc.configuration["task-description"].selectedTasks;
         tasks.forEach(task => {

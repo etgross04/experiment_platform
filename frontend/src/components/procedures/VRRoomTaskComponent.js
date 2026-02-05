@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { startRecording, playBeep, setCondition, setEventMarker } from '../utils/helpers.js';
 import './MainTaskComponent.css'; // Reuse same styling
 
@@ -8,8 +8,7 @@ const VRRoomTaskComponent = ({
   sessionId, 
   onTaskComplete, 
   isExperimenterMode = false,
-  procedureActive = false,
-  configuration = {}
+  procedureActive = false
 }) => {
   const validAudioSets = ['vr_room_task_1', 'vr_room_task_2'];
   const selectedAudioSet = validAudioSets.includes(audioSet) ? audioSet : 'vr_room_task_1';
@@ -30,26 +29,87 @@ const VRRoomTaskComponent = ({
   const timeoutRef = useRef(null);
   const recordingTimeoutRef = useRef(null);
   const beepTimeoutRef = useRef(null);
-  
-  const AUDIO_DIR = `/audio_files/vr_room_audio/${selectedAudioSet}/`;
+
+// Use ref to track current step index to avoid stale closure issues
+  const currentStepIndexRef = useRef(0);
+  // Ref to hold executeStepByIndex to break circular dependency
+  const executeStepByIndexRef = useRef(null);
+
+const actualAudioSet = procedure?.configuration?.['audio-set-selection']?.audioSet 
+                    || procedure?.wizardData?.vrRoomAudioSet 
+                    || selectedAudioSet;
+const AUDIO_DIR = `/audio_files/vr_room_audio/${actualAudioSet}/`;
+
+// Reset to step 0 when procedure instance changes
+useEffect(() => {
+  if (procedure?.instanceId && isExperimenterMode) {
+    console.log(`VR Room Task procedure changed to instanceId: ${procedure.instanceId} - resetting to step 0`);
+    setCurrentStepIndex(0);
+    currentStepIndexRef.current = 0;
+    setTimeoutRemaining(0);
+    setRecordingStatus('');
+    setIsRecording(false);
+    
+    // Clear any running timers
+    if (timeoutRef.current) {
+      clearInterval(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
+    if (beepTimeoutRef.current) {
+      clearTimeout(beepTimeoutRef.current);
+      beepTimeoutRef.current = null;
+    }
+    
+    // Clear all audio handlers AND force reload
+    Object.values(audioRefs.current).forEach(audioRef => {
+      if (audioRef) {
+        audioRef.onended = null;
+        audioRef.pause();
+        audioRef.currentTime = 0;
+        audioRef.src = ''; // Clear the source
+        audioRef.load(); // Force reload
+      }
+});
+
+// Clear the refs object completely
+audioRefs.current = {};
+  }
+}, [procedure?.instanceId, isExperimenterMode]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentStepIndexRef.current = currentStepIndex;
+  }, [currentStepIndex]);
 
   // Load audio files and configuration
   useEffect(() => {
     const loadAudioFilesAndConfig = async () => {
       try {
-        const audioSet = configuration['audio-set-selection']?.audioSet || selectedAudioSet;
-        const sessionType = configuration['session-type-selection']?.sessionType || 'practice';
+        const audioSet = procedure?.configuration?.['audio-set-selection']?.audioSet || selectedAudioSet;
+        const sessionType = procedure?.configuration?.['session-type-selection']?.sessionType || 'practice';
         
         // Check if we have an edited config from the wizard
-        const wizardEditedConfig = configuration['sequence-editor']?.editableConfig;
+        const wizardEditedConfig = procedure?.configuration?.['sequence-editor']?.editableConfig;
         
-        let fullConfig;
+        let filteredSteps = [];
         
         if (wizardEditedConfig && wizardEditedConfig.steps) {
           // Use the edited config from the wizard
           console.log('=== VR ROOM TASK LOADING (WIZARD-EDITED) ===');
           console.log('Using wizard-edited configuration');
-          fullConfig = { steps: wizardEditedConfig.steps };
+          console.log('Wizard config:', JSON.stringify(wizardEditedConfig, null, 2));
+          
+          // For wizard-edited configs, the steps should already be the filtered ones we need
+          // relevantIndices was used during editing but the final steps array is what we use
+          filteredSteps = wizardEditedConfig.steps || [];
+          
+          console.log(`Session type: ${sessionType}`);
+          console.log(`Loaded ${filteredSteps.length} steps from wizard configuration`);
+          console.log('Steps:', filteredSteps);
         } else {
           // Fetch config from server
           console.log('=== VR ROOM TASK LOADING (SERVER) ===');
@@ -62,26 +122,41 @@ const VRRoomTaskComponent = ({
             return;
           }
           
-          fullConfig = configData.config;
+          const fullConfig = configData.config;
+          
+          // Filter steps based on session type for server-loaded config
+          filteredSteps = fullConfig.steps.filter(step => {
+            return step.sessionTypes && step.sessionTypes.includes(sessionType);
+          });
+          
+          console.log(`Session type: ${sessionType}`);
+          console.log(`Total steps in config: ${fullConfig.steps.length}`);
+          console.log(`Filtered steps for this session: ${filteredSteps.length}`);
         }
         
-        // Filter steps based on session type
-        const filteredSteps = fullConfig.steps.filter(step => {
-          return step.sessionTypes && step.sessionTypes.includes(sessionType);
-        });
+        if (!filteredSteps || filteredSteps.length === 0) {
+          console.error('No steps found in configuration!');
+          setLoading(false);
+          return;
+        }
         
-        console.log(`Session type: ${sessionType}`);
-        console.log(`Total steps in config: ${fullConfig.steps.length}`);
-        console.log(`Filtered steps for this session: ${filteredSteps.length}`);
-        
+        console.log('Setting sequence config with steps:', filteredSteps);
         setSequenceConfig({ steps: filteredSteps });
         
         // Load audio files
         const audioFilesNeeded = filteredSteps
-          .filter(step => step.file)
+          .filter(step => step && step.file)
           .map(step => step.file);
         
         console.log('Audio files needed:', audioFilesNeeded);
+        
+        if (audioFilesNeeded.length === 0) {
+          console.warn('No audio files needed - all steps may be timeouts or recordings');
+          setAudioFiles([]);
+          console.log('=== VR ROOM TASK LOADED SUCCESSFULLY (NO AUDIO FILES) ===');
+          setLoading(false);
+          return;
+        }
         
         const audioResponse = await fetch(`/api/vr-room-audio/${audioSet}`);
         const audioData = await audioResponse.json();
@@ -106,13 +181,14 @@ const VRRoomTaskComponent = ({
         
       } catch (error) {
         console.error('Error loading VR room task:', error);
+        console.error('Error stack:', error.stack);
       } finally {
         setLoading(false);
       }
     };
     
     loadAudioFilesAndConfig();
-  }, [selectedAudioSet, configuration]);
+  }, [selectedAudioSet, procedure]);
 
   // Initialize condition and event marker
   useEffect(() => {
@@ -134,7 +210,7 @@ const VRRoomTaskComponent = ({
     console.log('VR Room Task initialized with condition:', taskCondition, 'event marker:', taskEventMarker, 'audio set:', selectedAudioSet);
   }, [procedure, selectedAudioSet]);
 
-  const playAudio = (stepIndex, onEndedCallback) => {
+  const playAudio = useCallback((stepIndex, onEndedCallback) => {
     const ref = audioRefs.current[`step_${stepIndex}`];
     if (ref) {
       if (onEndedCallback) {
@@ -144,99 +220,198 @@ const VRRoomTaskComponent = ({
         .then(() => console.log(`Playing step ${stepIndex}`))
         .catch(err => console.error(`Error playing step ${stepIndex}:`, err));
     }
-  };
+  }, []);
 
-  const getCurrentStep = () => {
+  const getCurrentStep = useCallback(() => {
     if (!sequenceConfig || !sequenceConfig.steps || currentStepIndex >= sequenceConfig.steps.length) {
       return null;
     }
     return sequenceConfig.steps[currentStepIndex];
-  };
+  }, [sequenceConfig, currentStepIndex]);
 
-  const handleStepEnd = () => {
-  const step = getCurrentStep();
-  if (!step) return;
+  const handleTaskComplete = useCallback(async () => {
+    console.log("VR Room Task completed");
+    setEventMarker('subject_idle');
+    setCondition('None');
+    
+    if (onTaskComplete) {
+      try {
+        await onTaskComplete();
+        console.log("VR Room Task auto-completed successfully");
+      } catch (error) {
+        console.error("Error auto-completing VR room task:", error);
+      }
+    }
+  }, [onTaskComplete]);
 
-  console.log(`Step ${currentStepIndex} audio ended`);
+  const proceedToNextStep = useCallback((fromStepIndex) => {
+  // SAFETY: Prevent if we're already beyond this step
+  if (currentStepIndexRef.current > fromStepIndex) {
+    console.log(`Already moved past step ${fromStepIndex}, skipping proceedToNextStep`);
+    return;
+  }
   
-  // Handle beep after audio if configured
-  if (step.beepAfter) {
-    playBeep();
+  const nextIndex = fromStepIndex + 1;
+  
+  console.log(`proceedToNextStep called from step ${fromStepIndex}, moving to step ${nextIndex}`);
+  
+  if (!sequenceConfig || !sequenceConfig.steps) {
+    console.error('No sequence config available');
+    return;
   }
-
-  // Handle recording if this is a recording step type
-  if (step.stepType === 'recording') {
-    startRecordingForStep(currentStepIndex);
-  }
-  // Handle timeout if configured
-  else if (step.timeout > 0) {
-    startTimeoutForStep(currentStepIndex);
-  }
-  // Move to next step if no recording or timeout
-  else {
-    proceedToNextStep();
-  }
-};
-
-  const startTimeoutForStep = (stepIndex) => {
-    const step = sequenceConfig.steps[stepIndex];
-    console.log(`Starting timeout for step ${stepIndex}: ${step.timeout} seconds`);
+  
+  if (nextIndex < sequenceConfig.steps.length) {
+    console.log(`Moving to step ${nextIndex + 1} of ${sequenceConfig.steps.length}`);
     
-    setTimeoutRemaining(step.timeout);
-    setRecordingStatus(`Waiting ${step.timeout} seconds...`);
+    // Clear ALL timers and intervals
+    if (timeoutRef.current) {
+      clearInterval(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     
-    timeoutRef.current = setInterval(() => {
-      setTimeoutRemaining(prev => {
-        if (prev <= 1) {
-          clearInterval(timeoutRef.current);
-          console.log(`Timeout complete for step ${stepIndex}`);
-          setRecordingStatus('');
-          proceedToNextStep();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
+    // Clear ALL audio handlers
+    Object.values(audioRefs.current).forEach(audioRef => {
+      if (audioRef) {
+        audioRef.onended = null;
+        audioRef.pause();
+        audioRef.currentTime = 0;
+      }
+    });
+    
+    // Update both state and ref
+    setCurrentStepIndex(nextIndex);
+    currentStepIndexRef.current = nextIndex;
+    
+    // Execute the next step after state update
+    setTimeout(() => {
+      if (executeStepByIndexRef.current) {
+        executeStepByIndexRef.current(nextIndex);
+      }
+    }, 500);
+  } else {
+    console.log('All steps complete, task finished');
+    handleTaskComplete();
+  }
+}, [sequenceConfig, handleTaskComplete]);
 
-  const startRecordingForStep = (stepIndex) => {
-    const step = sequenceConfig.steps[stepIndex];
-    setIsRecording(true);
-    setRecordingStatus(`Recording started for step ${stepIndex + 1}... ${step.recordingDuration || 90} second timer started.`);
+  const handleStepEnd = useCallback((stepIndex) => {
+  return () => {
+    const step = sequenceConfig?.steps?.[stepIndex];
+    if (!step) {
+      console.error(`handleStepEnd: No step found at index ${stepIndex}`);
+      return;
+    }
+
+    // CRITICAL: Clear the audio handler immediately to prevent double-firing
+    const audioRef = audioRefs.current[`step_${stepIndex}`];
+    if (audioRef) {
+      audioRef.onended = null;
+    }
+
+    console.log(`Step ${stepIndex} audio ended`);
     
-    try {
-      const emarker = `${eventMarker}_step_${stepIndex + 1}`;
-      setEventMarker(emarker);
-      startRecording();
+    // Calculate total delay needed for beep + timeout
+    let totalDelay = 0;
+    
+    // Add beep delay if configured
+    if (step.beepAfter) {
       playBeep();
+      totalDelay += 600; // 600ms for beep to complete
+    }
+    
+    // Add timeout delay if configured
+    if (step.timeout && step.timeout > 0) {
+      totalDelay += step.timeout * 1000; // Convert seconds to milliseconds
+    }
+    
+    // If there's any delay, handle it
+    if (totalDelay > 0) {
+      console.log(`Waiting ${totalDelay}ms (beep + timeout) after step ${stepIndex}`);
       
-      console.log(`Recording started for step ${stepIndex + 1}`);
-
-      // Warning beeps at configured time (defaults to 15 seconds before end if not configured)
-      const warningTime = step.warningBeepAt !== undefined 
-        ? step.warningBeepAt 
-        : Math.max(0, (step.recordingDuration || 90) - 15);
+      // If there's a timeout, show countdown
+      if (step.timeout && step.timeout > 0) {
+        setTimeoutRemaining(step.timeout);
+        setRecordingStatus(`Waiting ${step.timeout} seconds...`);
         
-      beepTimeoutRef.current = setTimeout(() => {
-        playBeep();
-        setTimeout(playBeep, 500);
-      }, warningTime * 1000);
-
-      // Stop recording after duration
-      recordingTimeoutRef.current = setTimeout(() => {
-        stopRecordingForStep(stepIndex);
-      }, (step.recordingDuration || 90) * 1000);
-    } catch (error) {
-      console.error("Recording failed:", error);
-      setRecordingStatus(`Recording failed: ${error.message}`);
+        let remaining = step.timeout;
+        timeoutRef.current = setInterval(() => {
+          remaining -= 1;
+          setTimeoutRemaining(remaining);
+          
+          if (remaining <= 0) {
+            clearInterval(timeoutRef.current);
+            timeoutRef.current = null;
+            setRecordingStatus('');
+            setTimeoutRemaining(0);
+          }
+        }, 1000);
+      }
+      
+      // Proceed after total delay
+      setTimeout(() => {
+        proceedToNextStep(stepIndex);
+      }, totalDelay);
+    } else {
+      // No delay - proceed immediately
+      proceedToNextStep(stepIndex);
     }
   };
+}, [sequenceConfig, proceedToNextStep]);
 
-  const stopRecordingForStep = (stepIndex) => {
+  const startTimeoutForStep = useCallback((stepIndex) => {
+  const step = sequenceConfig?.steps?.[stepIndex];
+  if (!step) return;
+  
+  console.log(`Starting timeout for step ${stepIndex}: ${step.timeout} seconds`);
+  
+  setTimeoutRemaining(step.timeout);
+  setRecordingStatus(`Waiting ${step.timeout} seconds...`);
+  
+  let remaining = step.timeout;
+  timeoutRef.current = setInterval(() => {
+    remaining -= 1;
+    setTimeoutRemaining(remaining);
+    
+    if (remaining <= 0) {
+      clearInterval(timeoutRef.current);
+      timeoutRef.current = null;
+      setRecordingStatus('');
+      setTimeoutRemaining(0);
+    }
+  }, 1000);
+  
+  // Calculate delay: timeout + beepAfter if configured
+  let totalDelay = step.timeout * 1000;
+  
+  if (step.beepAfter) {
+    // Play beep at the END of timeout
+    setTimeout(() => {
+      playBeep();
+    }, totalDelay);
+    totalDelay += 600; // Add beep duration
+  }
+  
+  // Proceed after timeout (and beep if configured)
+  setTimeout(() => {
+    proceedToNextStep(stepIndex);
+  }, totalDelay);
+}, [sequenceConfig, proceedToNextStep]);
+
+  const stopRecordingForStep = useCallback((stepIndex) => {
     setIsRecording(false);
     console.log(`Stopping recording for step ${stepIndex + 1}`);
     
-    const step = sequenceConfig.steps[stepIndex];
+    const step = sequenceConfig?.steps?.[stepIndex];
+    if (!step) {
+      console.error(`stopRecordingForStep: No step found at index ${stepIndex}`);
+      return;
+    }
+    
+    // Handle beep after recording if configured
+    if (step.beepAfter) {
+      playBeep();
+    }
+    
     const stepName = step.file ? step.file.replace(/\.[^/.]+$/, "") : `step_${stepIndex + 1}`;
     
     // Call VR Room-specific endpoint
@@ -264,75 +439,133 @@ const VRRoomTaskComponent = ({
       setRecordingStatus(`Error: ${error.message}`);
     });
     
+    // Clear timeouts
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
     }
     if (beepTimeoutRef.current) {
       clearTimeout(beepTimeoutRef.current);
+      beepTimeoutRef.current = null;
     }
     
-    proceedToNextStep();
-  };
+    // Proceed to next step, passing the current step index explicitly
+    console.log(`Recording stopped at step ${stepIndex}, proceeding to next step`);
+    proceedToNextStep(stepIndex);
+  }, [sequenceConfig, eventMarker, condition, proceedToNextStep]);
 
-  const proceedToNextStep = () => {
-    const nextIndex = currentStepIndex + 1;
-    
-    if (nextIndex < sequenceConfig.steps.length) {
-      console.log(`Moving to step ${nextIndex + 1}`);
-      setCurrentStepIndex(nextIndex);
-      
-      // Play next step after short delay
-      setTimeout(() => {
-        const nextStep = sequenceConfig.steps[nextIndex];
-        
-        // Play beep before if configured
-        if (nextStep.beepBefore) {
-          playBeep();
-          // Small delay after beep before playing audio
-          setTimeout(() => playAudio(nextIndex, handleStepEnd), 300);
-        } else {
-          playAudio(nextIndex, handleStepEnd);
-        }
-      }, 500);
-    } else {
-      console.log('All steps complete, task finished');
-      handleTaskComplete();
-    }
-  };
-
-  const handleTaskComplete = async () => {
-    console.log("VR Room Task completed");
-    setEventMarker('subject_idle');
-    setCondition('None');
-    
-    if (onTaskComplete) {
-      try {
-        await onTaskComplete();
-        console.log("VR Room Task auto-completed successfully");
-      } catch (error) {
-        console.error("Error auto-completing VR room task:", error);
-      }
-    }
-  };
-
-  const startTask = () => {
-    if (!sequenceConfig || !audioFiles) {
-      console.error('Cannot start task: missing config or audio files');
+  const startRecordingForStep = useCallback((stepIndex) => {
+    const step = sequenceConfig?.steps?.[stepIndex];
+    if (!step) {
+      console.error(`startRecordingForStep: No step found at index ${stepIndex}`);
       return;
     }
     
-    console.log('Starting VR Room Task');
-    setCurrentStepIndex(0);
-    
-    const firstStep = sequenceConfig.steps[0];
-    if (firstStep.beepBefore) {
-      playBeep();
-      setTimeout(() => playAudio(0, handleStepEnd), 300);
-    } else {
-      playAudio(0, handleStepEnd);
+    // Verify this is actually a recording step
+    if (step.stepType !== 'recording') {
+      console.error(`startRecordingForStep: Step ${stepIndex} is not a recording step (type: ${step.stepType})`);
+      return;
     }
-  };
+    
+    setIsRecording(true);
+    const recordingDuration = step.recordingDuration || 90;
+    setRecordingStatus(`Recording started for step ${stepIndex + 1}... ${recordingDuration} second timer started.`);
+    
+    try {
+      const emarker = `${eventMarker}_step_${stepIndex + 1}`;
+      setEventMarker(emarker);
+      startRecording();
+      
+      // Play beep before recording if configured
+      if (step.beepBefore) {
+        playBeep();
+      }
+      
+      console.log(`Recording started for step ${stepIndex + 1}, duration: ${recordingDuration}s`);
 
+      // Warning beeps at configured time (defaults to 15 seconds before end if not configured)
+      const warningTime = step.warningBeepAt !== undefined 
+        ? step.warningBeepAt 
+        : Math.max(0, recordingDuration - 15);
+      
+      if (warningTime > 0 && warningTime < recordingDuration) {
+        beepTimeoutRef.current = setTimeout(() => {
+          console.log(`Warning beeps at ${warningTime}s`);
+          playBeep();
+          setTimeout(playBeep, 500);
+        }, warningTime * 1000);
+      }
+
+      // Stop recording after duration - capture stepIndex in closure
+      const capturedStepIndex = stepIndex;
+      recordingTimeoutRef.current = setTimeout(() => {
+        console.log(`Recording timeout reached for step ${capturedStepIndex}`);
+        stopRecordingForStep(capturedStepIndex);
+      }, recordingDuration * 1000);
+      
+    } catch (error) {
+      console.error("Recording failed:", error);
+      setRecordingStatus(`Recording failed: ${error.message}`);
+      setIsRecording(false);
+    }
+  }, [sequenceConfig, eventMarker, stopRecordingForStep]);
+
+  const executeStepByIndex = useCallback((stepIndex) => {
+  if (!sequenceConfig || !sequenceConfig.steps) {
+    console.error('executeStepByIndex: No sequence config');
+    return;
+  }
+  
+  const step = sequenceConfig.steps[stepIndex];
+  if (!step) {
+    console.error(`executeStepByIndex: No step at index ${stepIndex}`);
+    return;
+  }
+  
+  console.log(`Executing step ${stepIndex + 1}/${sequenceConfig.steps.length}:`, step);
+  
+  // Determine step type - prioritize explicit stepType, then check for file
+  const hasFile = step.file && step.file.trim() !== '';
+  const isRecordingStep = step.stepType === 'recording';
+  const isTimeoutStep = step.stepType === 'timeout' || (!hasFile && !isRecordingStep && step.timeout && step.timeout > 0);
+  
+  console.log(`Step ${stepIndex} analysis: hasFile=${hasFile}, isRecordingStep=${isRecordingStep}, isTimeoutStep=${isTimeoutStep}`);
+  
+  // Handle beep before if configured (but NOT for recording steps - they handle their own beep)
+  const shouldPlayBeepBefore = step.beepBefore && step.stepType !== 'recording';
+  
+  // FIXED: Increase delay to ensure beep completes
+  const delay = shouldPlayBeepBefore ? 800 : 0;  // Changed from 300 to 800ms
+  
+  if (shouldPlayBeepBefore) {
+    console.log(`Playing beep before step ${stepIndex}`);
+    playBeep();
+  }
+  
+  // Execute the step action after optional beep delay
+  setTimeout(() => {
+    if (hasFile) {
+      // Audio file step
+      console.log(`Step ${stepIndex}: Playing audio file ${step.file}`);
+      playAudio(stepIndex, handleStepEnd(stepIndex));
+    } else if (isRecordingStep) {
+      // Recording step - ONLY identified by stepType === 'recording'
+      console.log(`Step ${stepIndex}: Starting recording session`);
+      startRecordingForStep(stepIndex);
+    } else if (isTimeoutStep) {
+      // Timeout step
+      console.log(`Step ${stepIndex}: Starting timeout of ${step.timeout}s`);
+      startTimeoutForStep(stepIndex);
+    } else {
+      // No action defined - skip to next
+      console.warn(`Step ${stepIndex} has no action (no file, not recording, no timeout) - skipping`);
+      proceedToNextStep(stepIndex);
+    }
+  }, delay);
+}, [sequenceConfig, playAudio, handleStepEnd, startRecordingForStep, startTimeoutForStep, proceedToNextStep]);
+
+  // Keep ref updated for use in proceedToNextStep
+  executeStepByIndexRef.current = executeStepByIndex;
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -386,57 +619,54 @@ const VRRoomTaskComponent = ({
         </div>
 
         <div className="main-task-controls">
-          {currentStepIndex >= totalSteps ? (
+          {sequenceConfig.steps.map((step, idx) => (
+            <div 
+              key={idx}
+              className="current-step-control" 
+              style={{ display: currentStepIndex === idx ? 'block' : 'none' }}
+            >
+              <label>Step {idx + 1}/{sequenceConfig.steps.length}: {step.file || (step.stepType === 'recording' ? 'Recording' : 'Timeout')}</label>
+              {step.file && (
+                <audio 
+                  key={`${procedure.instanceId}_step_${idx}`}
+                  ref={el => audioRefs.current[`step_${idx}`] = el}
+                  controls
+                  onEnded={handleStepEnd(idx)}
+                  className="audio-control"
+                  style={{ width: '100%', marginBottom: '10px' }}
+                >
+                  <source src={`${AUDIO_DIR}${step.file}`} type="audio/mpeg" />
+                </audio>
+              )}
+              
+              {!step.file && step.stepType !== 'recording' && step.timeout > 0 && timeoutRemaining > 0 && currentStepIndex === idx && (
+                <div className="observation-timer-display" style={{ marginTop: '10px' }}>
+                  <div className="timer-count">{timeoutRemaining}s</div>
+                  <div className="timer-text">Timeout remaining</div>
+                </div>
+              )}
+              
+              {step.stepType === 'recording' && isRecording && currentStepIndex === idx && (
+                <div style={{ 
+                  marginTop: '10px', 
+                  padding: '10px', 
+                  background: '#fef3c7',
+                  borderRadius: '4px',
+                  border: '1px solid #f59e0b'
+                }}>
+                  Recording in progress
+                </div>
+              )}
+            </div>
+          ))}
+
+          {currentStepIndex >= totalSteps && (
             <div className="completion-control">
               <label>Task Completed</label>
               <div className="completion-display">
                 VR room task sequence completed successfully.
               </div>
             </div>
-          ) : (
-            <>
-              {currentStepIndex === 0 && !isRecording && timeoutRemaining === 0 && (
-                <div className="start-control">
-                  <button onClick={startTask} className="start-task-btn">
-                    ▶️ Start VR Room Task
-                  </button>
-                </div>
-              )}
-              
-              <div className="current-step-control">
-                <label>Current Step: {currentStep?.file}</label>
-                {currentStep && (
-                  <audio 
-                    ref={el => audioRefs.current[`step_${currentStepIndex}`] = el}
-                    controls
-                    onEnded={handleStepEnd}
-                    className="audio-control"
-                    style={{ display: currentStepIndex > 0 || timeoutRemaining > 0 || isRecording ? 'block' : 'none' }}
-                  >
-                    <source src={`${AUDIO_DIR}${currentStep.file}`} type="audio/mpeg" />
-                  </audio>
-                )}
-                
-                {timeoutRemaining > 0 && (
-                  <div className="observation-timer-display" style={{ marginTop: '10px' }}>
-                    <div className="timer-count">{timeoutRemaining}s</div>
-                    <div className="timer-text">Timeout remaining</div>
-                  </div>
-                )}
-                
-                {currentStep?.stepType === 'recording' && isRecording && (
-                  <div style={{ 
-                    marginTop: '10px', 
-                    padding: '10px', 
-                    background: '#fef3c7',
-                    borderRadius: '4px',
-                    border: '1px solid #f59e0b'
-                  }}>
-                    Recording in progress
-                  </div>
-                )}
-              </div>
-            </>
           )}
         </div>
 
@@ -454,7 +684,7 @@ const VRRoomTaskComponent = ({
           fontSize: '12px'
         }}>
           <div style={{ marginBottom: '5px', fontWeight: '600' }}>
-            Progress: {currentStepIndex + 1} / {totalSteps} steps
+            Progress: {Math.min(currentStepIndex + 1, totalSteps)} / {totalSteps} steps
           </div>
           <div style={{ 
             width: '100%', 
@@ -464,7 +694,7 @@ const VRRoomTaskComponent = ({
             overflow: 'hidden'
           }}>
             <div style={{
-              width: `${((currentStepIndex + 1) / totalSteps) * 100}%`,
+              width: `${(Math.min(currentStepIndex + 1, totalSteps) / totalSteps) * 100}%`,
               height: '100%',
               background: '#3b82f6',
               transition: 'width 0.3s ease'
@@ -483,9 +713,11 @@ const VRRoomTaskComponent = ({
     <div className="main-task-component">
       {/* Hidden audio elements for all steps */}
       {sequenceConfig.steps.map((step, idx) => (
-        <audio key={idx} ref={el => audioRefs.current[`step_${idx}`] = el} style={{ display: 'none' }}>
-          <source src={`${AUDIO_DIR}${step.file}`} type="audio/mpeg" />
-        </audio>
+        step.file && (
+          <audio key={`${procedure.instanceId}_step_${idx}`} ref={el => audioRefs.current[`step_${idx}`] = el} style={{ display: 'none' }}>
+            <source src={`${AUDIO_DIR}${step.file}`} type="audio/mpeg" />
+          </audio>
+        )
       ))}
 
       <div className="procedure-header">
@@ -523,7 +755,7 @@ const VRRoomTaskComponent = ({
             <>
               <div className="current-step-section">
                 <h3>Step {currentStepIndex + 1} of {totalSteps}</h3>
-                {currentStep && (
+                {currentStep && currentStep.file && (
                   <div className="step-info">
                     <p>{currentStep.file.replace(/^\d+-[A-Z]+-/, '').replace(/_/g, ' ').replace('.mp3', '')}</p>
                   </div>
@@ -566,7 +798,7 @@ const VRRoomTaskComponent = ({
           </span>
         </div>
         <div className="progress-info">
-          Progress: {Math.round(((currentStepIndex + 1) / totalSteps) * 100)}%
+          Progress: {Math.round((Math.min(currentStepIndex + 1, totalSteps) / totalSteps) * 100)}%
         </div>
       </div>
     </div>
