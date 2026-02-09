@@ -1,3 +1,391 @@
+/**
+ * ExperimenterInterface Component - Control Panel for Experimental Session Management
+ * 
+ * @component ExperimenterInterface
+ * @description Main experimenter control interface for managing experimental sessions, procedures,
+ * data collection, participant registration, and hardware sensor management. Provides real-time
+ * monitoring and control of experiment execution.
+ * 
+ * @state
+ * @property {string|null} currentSession - Active session ID from URL parameters
+ * @property {number} currentProcedure - Index of currently active procedure
+ * @property {string} sessionStatus - Session state ('waiting'|'ready'|'active'|'complete')
+ * @property {Object|null} experimentData - Loaded experiment configuration with procedures
+ * @property {Array<number>} completedProcedures - Indices of completed procedure steps
+ * @property {boolean} showSettingsPanel - Settings/tools panel visibility
+ * @property {boolean} showPreTestInstructions - Pre-test setup wizard visibility
+ * @property {boolean} showProcedureInstructions - Procedure instruction wizard visibility
+ * @property {Procedure|null} selectedProcedureForInstructions - Procedure selected for instruction display
+ * @property {boolean} preTestCompleted - Whether pre-test setup has been completed
+ * @property {boolean} participantRegistered - Whether participant info has been registered
+ * @property {boolean} showSetupForm - Whether to show experiment/trial setup form
+ * @property {boolean} isToolPanelOpen - Tool panel visibility state
+ * @property {boolean} toolPanelProcedureActive - Whether procedure in tool panel is active
+ * @property {boolean} emotiBitLoading - EmotiBit manager operation in progress
+ * @property {boolean} vernierLoading - Vernier manager operation in progress
+ * @property {boolean} polarLoading - Polar HR manager operation in progress
+ * @property {Object} setupData - Experiment setup form data (experimentName, trialName, studentFirstName, studentLastName)
+ * @property {Object} setupErrors - Validation errors for setup form
+ * @property {Object|null} sessionInfo - Session metadata from server
+ * @property {boolean} emotiBitRunning - EmotiBit event manager running state
+ * @property {boolean} vernierRunning - Vernier respiratory manager running state
+ * @property {boolean} polarRunning - Polar HR manager running state
+ * @property {string} selectedMicrophone - Selected audio device index
+ * @property {Array<AudioDevice>} audioDevices - Available audio input devices
+ * @property {boolean} isLoadingDevices - Audio device enumeration in progress
+ * @property {boolean} audioTestStarted - Whether audio test has been initiated
+ * @property {boolean} audioTestCompleted - Whether audio test completed successfully
+ * @property {string} uploadEmotibitStatus - EmotiBit file upload status message
+ * @property {string} emotibitFilePath - Path to uploaded EmotiBit CSV file
+ * @property {boolean} emotibitDataImported - Whether EmotiBit data has been imported
+ * @property {boolean} parsingEventMarkers - Event marker parsing in progress
+ * @property {string} eventMarkerFilePath - Path to parsed event marker file
+ * @property {boolean} checkingStatus - Manager status check in progress
+ * 
+ * @typedef {Object} AudioDevice
+ * @property {number} index - Device index
+ * @property {string} name - Device display name
+ * 
+ * @typedef {Object} SetupData
+ * @property {string} experimentName - Experiment folder name
+ * @property {string} trialName - Trial subfolder name
+ * @property {string} studentFirstName - Experimenter first name
+ * @property {string} studentLastName - Experimenter last name
+ * 
+ * @typedef {Object} SessionInfo
+ * @property {string} experiment_folder_name - Experiment folder name
+ * @property {string} trial_name - Trial name
+ * @property {boolean} has_participant_info - Whether participant registered
+ * @property {string} [subject_folder] - Subject data folder path
+ * 
+ * @lifecycle
+ * 
+ * Initialization:
+ * 1. Extracts session ID from URL (?session={id})
+ * 2. Loads experiment data from /api/experiments/{experimentId}
+ * 3. Loads session info from /api/sessions/{sessionId}/info
+ * 4. Establishes SSE connection for real-time updates
+ * 5. Detects audio requirements and loads audio devices if needed
+ * 
+ * Cleanup:
+ * - Sends beacon to /api/sessions/{sessionId}/cleanup-experimenter on window unload
+ * - Closes SSE connection
+ * - Clears heartbeat interval
+ * 
+ * @sse_events
+ * Server-Sent Events from /api/sessions/{sessionId}/stream:
+ * - task_completed: Updates completedProcedures, currentProcedure, audioTestCompleted
+ * - participant_registered: Sets participantRegistered flag
+ * 
+ * @api_endpoints
+ * 
+ * Session Management:
+ * POST /api/sessions/{sessionId}/set-experiment-trial
+ * @body {experimentName, trialName, studentFirstName, studentLastName}
+ * @description Sets experiment/trial metadata for session
+ * 
+ * POST /api/sessions/{sessionId}/heartbeat
+ * @description Keeps session alive (sent every 5 seconds)
+ * 
+ * POST /api/sessions/{sessionId}/cleanup-experimenter
+ * @description Cleanup on experimenter window close
+ * 
+ * GET /api/sessions/{sessionId}/info
+ * @returns {SessionInfo} Session metadata
+ * 
+ * POST /api/sessions/{sessionId}/set-current-procedure
+ * @body {current_procedure: number, procedure_name: string, timestamp: string}
+ * @description Updates current procedure index
+ * 
+ * POST /api/sessions/{sessionId}/complete-procedure
+ * @body {completed: boolean, timestamp: string}
+ * @description Marks current procedure as complete
+ * 
+ * POST /api/sessions/{sessionId}/complete-experiment
+ * @body {timestamp: string, total_procedures: number, completed_procedures: number}
+ * @description Marks experiment as complete and resets system
+ * 
+ * POST /api/sessions/{sessionId}/trigger-audio-test
+ * @description Initiates audio test on subject interface
+ * 
+ * Hardware Control:
+ * POST /start_event_manager
+ * @description Starts EmotiBit event marker collection
+ * 
+ * POST /stop_event_manager
+ * @description Stops EmotiBit event marker collection
+ * 
+ * POST /start_vernier_manager
+ * @description Starts Vernier respiratory data streaming
+ * @returns {{success: boolean, warning?: boolean, message: string}}
+ * 
+ * POST /stop_vernier_manager
+ * @description Stops Vernier respiratory data streaming
+ * 
+ * POST /start_polar_manager
+ * @description Starts Polar H10 heart rate streaming
+ * @returns {{success: boolean, warning?: boolean, message: string}}
+ * 
+ * POST /stop_polar_manager
+ * @description Stops Polar H10 heart rate streaming
+ * 
+ * GET /api/manager-status
+ * @returns {{success: boolean, status: {event_manager: boolean, vernier_manager: boolean, polar_manager: boolean}}}
+ * @description Checks current state of all data managers
+ * 
+ * Audio Management:
+ * POST /reset_audio
+ * @description Resets audio system and reloads devices
+ * 
+ * See utils/helpers.js for:
+ * - fetchAudioDevices()
+ * - setDevice(deviceIndex)
+ * - setEventMarker(markerName)
+ * 
+ * Data Processing:
+ * POST /import_emotibit_csv
+ * @body FormData with 'emotibit_file'
+ * @returns {{message: string, file_path: string}}
+ * @description Imports EmotiBit CSV from SD card
+ * 
+ * POST /api/parse-event-markers
+ * @body FormData with 'ground_truth_file', 'session_id'
+ * @returns {{success: boolean, file_path: string, markers_count: number}}
+ * @description Parses event markers from EmotiBit ground truth file
+ * 
+ * POST /process_audio_files
+ * @returns {{message: string, path: string}}
+ * @description Processes all audio files for transcription and SER
+ * 
+ * POST /api/convert-hdf5-to-csv
+ * @body {session_id: string}
+ * @returns {{success: boolean, message: string, error?: string}}
+ * @description Converts HDF5 data files to CSV format
+ * 
+ * POST /api/push-to-database
+ * @body {session_id: string}
+ * @returns {{success: boolean, message: string, error?: string}}
+ * @description Pushes CSV data to PostgreSQL database
+ * 
+ * External Launchers:
+ * POST /api/launch-emotibit-osc
+ * @description Launches EmotiBit Oscilloscope application
+ * 
+ * POST /api/launch-emotibit-parser
+ * @description Launches EmotiBit DataParser application
+ * 
+ * @functions
+ * 
+ * @function isExperimentComplete
+ * @returns {boolean} Whether all non-config procedures are completed
+ * @description Filters out consent and data-collection, checks if all remaining procedures completed
+ * 
+ * @function checkManagerStatus
+ * @description Fetches current state of all data managers and updates local state
+ * 
+ * @function convertDataToCsv
+ * @description Converts HDF5 files to CSV, checks managers stopped first
+ * 
+ * @function pushDataToDatabase
+ * @description Pushes CSV data to database, checks managers stopped first
+ * 
+ * @function selectEmotibitFile
+ * @param {Event} event - File input change event
+ * @description Handles EmotiBit CSV upload (supports multiple files)
+ * 
+ * @function openEmotibitFilePicker
+ * @description Triggers hidden file input for EmotiBit CSV
+ * 
+ * @function launchEmotibitDataParser
+ * @description Launches EmotiBit DataParser application
+ * 
+ * @function openEventMarkerFilePicker
+ * @description Triggers hidden file input for event marker CSV
+ * 
+ * @function parseEventMarkerFile
+ * @param {Event} event - File input change event
+ * @description Parses event markers from EmotiBit ground truth CSV
+ * 
+ * @function loadAudioDevices
+ * @description Fetches available audio devices and auto-selects if only one
+ * 
+ * @function handleMicrophoneChange
+ * @param {Event} e - Select change event
+ * @description Sets selected audio device
+ * 
+ * @function resetAudio
+ * @description Resets audio system and reloads device list
+ * 
+ * @function testAudio
+ * @description Plays three 440Hz test beeps at 1-second intervals
+ * 
+ * @function playTestTone
+ * @description Plays single 440Hz sine wave beep (500ms duration)
+ * 
+ * @function toggleEmotiBit
+ * @description Starts/stops EmotiBit event manager
+ * 
+ * @function toggleVernier
+ * @description Starts/stops Vernier respiratory manager, handles hardware warnings
+ * 
+ * @function togglePolar
+ * @description Starts/stops Polar HR manager, handles hardware warnings
+ * 
+ * @function startAudioTest
+ * @description Triggers audio test on subject interface via SSE
+ * 
+ * @function loadSessionInfo
+ * @param {string} sessionId - Session ID
+ * @description Loads session metadata and updates setup form if experiment/trial set
+ * 
+ * @function loadExperimentData
+ * @param {string} sessionId - Session ID
+ * @description Loads experiment design from session ID (extracts experiment ID)
+ * 
+ * @function handleSetupInputChange
+ * @param {Event} e - Input change event
+ * @description Updates setup form data and clears field errors
+ * 
+ * @function validateSetupForm
+ * @returns {Object} Validation errors object
+ * @description Validates all setup form fields (experimentName, trialName, studentFirstName, studentLastName)
+ * 
+ * @function handleSetupSubmit
+ * @param {Event} e - Form submit event
+ * @description Validates and submits experiment/trial setup
+ * 
+ * @function launchSubjectInterface
+ * @description Opens subject interface in new window at http://localhost:3000/subject?session={sessionId}
+ * 
+ * @function jumpToProcedure
+ * @param {number} index - Procedure index (filtered, excluding consent/data-collection)
+ * @description Jumps to procedure if accessible, shows instruction wizard
+ * Access rules:
+ * - Current procedure always accessible
+ * - Completed procedures always accessible
+ * - Next procedure accessible if current completed
+ * - Previous procedure accessible if completed
+ * 
+ * @function handleProcedureInstructionsSkip
+ * @description Skips instruction wizard, sets procedure active, sends to server
+ * 
+ * @function handleProcedureInstructionsComplete
+ * @description Completes instruction wizard, sets procedure active, sends to server
+ * 
+ * @function getCurrentProcedureInfo
+ * @returns {Procedure} Current procedure object (filtered)
+ * @description Gets current procedure excluding consent/data-collection
+ * 
+ * @function handleCompleteExperiment
+ * @description Marks experiment complete, resets system, closes window
+ * 
+ * @function getAllMetrics
+ * @returns {Array<string>} List of required metrics ('audio_ser', 'biometrics', 'respiratory', 'polar_hr')
+ * @description Analyzes procedures and dataCollectionMethods to determine required sensors
+ * Detection rules:
+ * - PRS procedure → audio_ser
+ * - Main Task → audio_ser
+ * - VR Room Task → audio_ser
+ * - SER Baseline → audio_ser
+ * - Mental Arithmetic Task → audio_ser + biometrics
+ * - Stressor → audio_ser + biometrics
+ * - dataCollectionMethods.polar_hr → polar_hr
+ * - dataCollectionMethods.vernier_resp → respiratory
+ * - dataCollectionMethods.emotibit → biometrics
+ * 
+ * @function handlePreTestInstructionsComplete
+ * @description Marks pre-test complete, sets current procedure to first non-config procedure
+ * 
+ * @function renderSetupForm
+ * @description Renders experiment/trial setup form with validation
+ * 
+ * @subcomponents
+ * 
+ * @component PreTestInstructionsWizard
+ * @description Multi-step wizard for pre-experiment setup (consent, sensors, settings)
+ * @props See PreTestInstructionsWizard contract
+ * 
+ * @component ProcedureInstructionWizard
+ * @description Multi-step wizard for procedure-specific instructions
+ * @props {Procedure} procedure, {Function} onClose, {Function} onSkip, {Function} onComplete
+ * 
+ * @component SettingsPanel
+ * @description Side panel for hardware controls and data processing tools
+ * @props See SettingsPanel contract
+ * 
+ * @component ToolPanel
+ * @description Collapsible side panel for procedure-specific controls (PRS, Main Task, VR Room Task)
+ * @props See ToolPanel contract
+ * 
+ * @instructions_json
+ * Location: /experiments/instruction-steps.json
+ * Structure:
+ * {
+ *   "sensor-placement": {
+ *     "steps": [{id, title, label, content}]
+ *   },
+ *   "{procedureId}": {
+ *     "steps": [{id, title, label, content}]
+ *   }
+ * }
+ * 
+ * @behavior
+ * 
+ * Setup Flow:
+ * 1. Show setup form if experiment/trial not set
+ * 2. Validate and submit setup form
+ * 3. Load session info and experiment data
+ * 4. Show main interface
+ * 
+ * Pre-Test Flow:
+ * 1. Click "Start Pre-Test Setup"
+ * 2. Wizard shows: Consent → Sensor Placement Steps → Settings
+ * 3. Complete wizard to unlock procedures
+ * 
+ * Procedure Execution:
+ * 1. Click on accessible procedure (green/yellow highlight)
+ * 2. View procedure instructions
+ * 3. Skip or complete instructions
+ * 4. Procedure becomes active in tool panel (if PRS/Main Task/VR Room Task)
+ * 5. Complete procedure via tool panel or manual completion
+ * 6. Procedure marked complete, next unlocked
+ * 
+ * Manager Status Checking:
+ * - Checks before data conversion/database push
+ * - Prevents file corruption from open managers
+ * - Shows warnings if managers running
+ * 
+ * Audio Detection:
+ * - Checks dataCollectionMethods.audio_ser first (source of truth)
+ * - Falls back to procedure analysis
+ * - Loads audio devices only if audio required
+ * 
+ * Experiment Completion:
+ * - All procedures must be completed
+ * - Shows manager stop buttons
+ * - Shows EmotiBit import option
+ * - Shows data processing buttons
+ * - "Complete Experiment & Reset" finalizes and closes
+ * 
+ * @window_management
+ * - Warns on navigation away during active session
+ * - Sends cleanup beacon on unload
+ * - Opens subject interface in separate window
+ * - Opens consent form in popup window
+ * - Closes window on experiment completion
+ * 
+ * @notes
+ * - Session ID format: {experimentId}_{timestamp}_{random}
+ * - Heartbeat prevents session timeout (5-second interval)
+ * - SSE provides real-time updates from subject interface
+ * - Hardware managers must be stopped before file conversion
+ * - EmotiBit data can be imported before or after experiment completion
+ * - Multiple EmotiBit files can be uploaded simultaneously
+ * - Tool panel auto-opens for PRS, Main Task, and VR Room Task procedures
+ * - Consent and data-collection procedures always filtered from main list
+ * - Procedure accessibility based on linear completion (no skipping ahead)
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import './ExperimenterInterface.css';
 import { setDevice, fetchAudioDevices, setEventMarker } from './utils/helpers';
@@ -18,10 +406,6 @@ function PreTestInstructionsWizard({
   eventMarkerFilePath,
   launchEmotibitDataParser,
   openEventMarkerFilePicker,
-
-  // Shared state props
-
-  // Shared state props
 
   // Shared state props
   emotiBitRunning,

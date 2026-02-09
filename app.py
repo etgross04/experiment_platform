@@ -1,3 +1,884 @@
+"""
+Flask Application - Experimental Psychology Platform Backend Server
+
+DESCRIPTION:
+    Main Flask application serving as the backend for an experimental psychology platform.
+    Handles experiment management, session control, real-time data streaming, hardware
+    sensor integration (EmotiBit, Polar HR, Vernier), audio recording, transcription,
+    speech emotion recognition (SER), and database operations.
+
+GLOBAL STATE:
+    session_queues (dict): SSE message queues per session {session_id: Queue}
+    session_completions (dict): Procedure completion tracking {session_id: {completed_procedures, current_procedure}}
+    experimenter_heartbeats (dict): Heartbeat timestamps for cleanup monitoring {session_id: {last_seen, missed_beats}}
+    update_event (threading.Event): Global event for SSE broadcasting
+    update_message (dict): Current broadcast message for SSE
+    ACTIVE_SESSIONS (dict): Active experiment sessions {session_id: session_data}
+    
+    Manager instances:
+        event_manager (EventManager): EmotiBit event marker management
+        subject_manager (SubjectManager): Participant data management
+        audio_file_manager (AudioFileManager): Audio file storage
+        recording_manager (RecordingManager): Audio recording control
+        test_manager (TestManager): Mental Arithmetic Task (MAT) question management
+        ser_manager (SERManager): Speech emotion recognition
+        form_manager (FormManager): Google Forms URL customization
+        vernier_manager (VernierManager): Respiratory sensor streaming
+        polar_manager (PolarManager): Polar H10 heart rate streaming
+        lsl_manager (LSLManager): Lab Streaming Layer markers
+        transcription_manager (TranscriptionManager): Audio-to-text conversion
+
+CONSTANTS:
+    EXPERIMENT_TEMPLATES_DIR (str): "experiments/templates" - Saved experiment designs
+    EXPERIMENT_SUBJECT_DATA_DIR (str): "experiments/subject_data" - Participant data storage
+    TEST_FILES_DIR (str): "static/test_files" - Uploaded test configuration files
+    CONSENT_FORMS_DIR (str): "static/consent_forms" - Consent form PDFs
+    HEARTBEAT_TIMEOUT (int): 60 seconds - Max time between heartbeats before stale
+    HEARTBEAT_GRACE_ATTEMPTS (int): 3 - Missed heartbeats before cleanup
+    SHUTDOWN_FLAG (threading.Event): Signal for graceful shutdown
+
+CONFIGURATION:
+    Database config loaded from .env:
+        DB_HOST: PostgreSQL host (default: localhost)
+        DB_NAME: Database name (default: exp_platform_db)
+        DB_USER: Database user (default: exp_user)
+        DB_PASSWORD: Database password
+        DB_PORT: Database port (default: 5432)
+
+    Flask config:
+        DEBUG: True
+        static_folder: 'static'
+        static_url_path: ''
+
+    CORS enabled for /api/* routes
+
+API ENDPOINTS:
+
+=== EXPERIMENT MANAGEMENT ===
+
+GET /api/experiment-config
+    DESCRIPTION: Serves experiment configuration from experiments/experiment-config.json
+    RETURNS: {procedures, categories, paradigms, wizardSteps}
+    ERRORS: 404 if config not found, 500 on server error
+
+GET /api/experiments
+    DESCRIPTION: Lists all saved experiment templates
+    RETURNS: [{id, name, description, created_at, estimated_duration, procedure_count, procedures}]
+    NOTES: Sorted by created_at descending
+
+POST /api/experiments
+    DESCRIPTION: Saves new experiment template
+    REQUEST: {name, procedures, dataCollectionMethods, created_at, estimated_duration}
+    RETURNS: {success: true, id, message, filepath}
+    ERRORS: 400 if name/procedures missing, 500 on save error
+    PROCESSING:
+        - Generates unique experiment ID from name + timestamp
+        - Processes procedures through process_procedure_for_psychopy()
+        - Sorts procedures by position
+        - Saves to EXPERIMENT_TEMPLATES_DIR/{id}.json
+
+GET /api/experiments/{experiment_id}
+    DESCRIPTION: Retrieves specific experiment template
+    RETURNS: Complete experiment object with procedures
+    ERRORS: 404 if not found
+
+PUT /api/experiments/{experiment_id}
+    DESCRIPTION: Updates existing experiment template
+    REQUEST: {name, procedures, dataCollectionMethods, created_at, estimated_duration}
+    RETURNS: {success: true, id, message, filepath}
+    ERRORS: 404 if not found, 400 if validation fails
+    NOTES: Preserves original created_at, updates updated_at
+
+POST /api/experiments/{experiment_id}/run
+    DESCRIPTION: Creates new experiment session from template
+    REQUEST: {participant_id: "anonymous"}
+    RETURNS: {success: true, session_id, experiment_name}
+    PROCESSING:
+        - Loads experiment template
+        - Generates session_id: {experiment_id}_{timestamp}
+        - Creates ACTIVE_SESSIONS entry
+        - Initializes session_completions
+        - Calls instantiate_modules() to setup managers
+    ERRORS: 404 if template not found, 500 on error
+
+POST /api/save-template
+    DESCRIPTION: Saves experiment as reusable paradigm template
+    REQUEST: {name, description, category, color, procedures}
+    RETURNS: {success: true, message, template_id}
+    PROCESSING:
+        - Generates template_id from name (lowercase, hyphenated)
+        - Adds to experiment-config.json paradigms section
+        - Appends timestamp if template_id already exists
+    ERRORS: 400 if name/category missing
+
+POST /api/add-psychopy-procedure
+    DESCRIPTION: Adds custom external platform procedure to config
+    REQUEST: {name, duration, category, platform, required, instructionSteps}
+    RETURNS: {success: true, message, procedure, instruction_steps_added}
+    PROCESSING:
+        - Validates name, duration (1-120), platform, instruction steps
+        - Generates procedure_id from name
+        - Adds to experiment-config.json procedures
+        - Creates wizard steps for psychopy-setup and task-description
+        - Saves instruction steps to instruction-steps.json
+    ERRORS: 400 if validation fails, 500 on server error
+
+=== SESSION MANAGEMENT ===
+
+POST /api/sessions/{session_id}/set-experiment-trial
+    DESCRIPTION: Sets experiment/trial metadata for session
+    REQUEST: {experiment_name, trial_name, student_first_name, student_last_name}
+    RETURNS: {success: true, experiment_folder, trial_name}
+    PROCESSING:
+        - Sanitizes experiment_name and trial_name (lowercase, underscores)
+        - Creates directory: EXPERIMENT_SUBJECT_DATA_DIR/{experiment_name}/{trial_name}
+        - Updates subject_manager, vernier_manager, event_manager, polar_manager metadata
+    ERRORS: 404 if session not found, 400 if fields missing
+
+POST /api/sessions/{session_id}/participant
+    DESCRIPTION: Saves participant registration information
+    REQUEST: {participantInfo: {firstName, lastName, email, emailConfirm, pid, sonaClass}, timestamp}
+    RETURNS: {success: true, message, subject_folder, subject_dir}
+    PROCESSING:
+        - Validates email is present
+        - Creates subject_folder_name: {iso_date}_{sanitized_email}
+        - Creates directory: {trial_dir}/{subject_folder_name}
+        - Initializes all managers with subject metadata
+        - Saves session.json to subject directory
+        - Broadcasts participant_registered event via SSE
+    ERRORS: 404 if session not found, 400 if experiment/trial not set
+
+GET /api/sessions/{session_id}/info
+    DESCRIPTION: Retrieves session metadata
+    RETURNS: {success: true, session_data: {session_id, experiment_name, experiment_folder_name, trial_name, subject_folder, status, has_participant_info}}
+    ERRORS: 404 if session not found
+
+POST /api/sessions/{session_id}/heartbeat
+    DESCRIPTION: Experimenter heartbeat to prevent stale session cleanup
+    PROCESSING:
+        - Updates experimenter_heartbeats[session_id] with current timestamp
+        - Resets missed_beats counter
+    RETURNS: {success: true}
+    NOTES: Should be called every 5 seconds from experimenter interface
+
+GET /api/sessions/{session_id}/check-active
+    DESCRIPTION: Checks if session is still active (for subject reconnection)
+    RETURNS: {success: true, active: bool, current_procedure, completed_procedures}
+    THREAD-SAFE: Uses cleanup_lock for read
+
+POST /api/sessions/{session_id}/cleanup-experimenter
+    DESCRIPTION: Cleans up session when experimenter closes window
+    PROCESSING:
+        - Sets _cleanup_in_progress flag to prevent double-cleanup
+        - Stops all running managers (event, vernier, polar, recording)
+        - Saves session_terminated.json to subject directory
+        - Broadcasts session_terminated event
+        - Calls reset_experiment_managers()
+        - Removes from session_queues, session_completions, experimenter_heartbeats, ACTIVE_SESSIONS
+    RETURNS: {success: true, message}
+    THREAD-SAFE: Uses cleanup_lock
+    ERRORS: 500 on cleanup error
+
+POST /api/sessions/{session_id}/complete-experiment
+    DESCRIPTION: Marks experiment complete and resets system
+    REQUEST: {timestamp, total_procedures, completed_procedures}
+    PROCESSING:
+        - Updates session with completion data
+        - Saves session_final.json
+        - Broadcasts experiment_completed event
+        - Calls reset_experiment_managers()
+        - Deletes session from all tracking dictionaries
+    RETURNS: {success: true, message, experiment_name, subject_folder}
+    ERRORS: 404 if session not found
+
+POST /api/sessions/{session_id}/record-consent
+    DESCRIPTION: Records participant consent for session
+    REQUEST: {consentGiven: bool, consentMethod: str, timestamp}
+    PROCESSING:
+        - Saves consent record with IP address and user agent
+        - Updates session status to 'consent_completed'
+        - Saves consent_record.json to subject directory
+    RETURNS: {success: true, message, consent_given}
+    ERRORS: 404 if session not found
+
+=== SSE (SERVER-SENT EVENTS) ===
+
+GET /api/sessions/{session_id}/stream
+    DESCRIPTION: Server-Sent Events stream for real-time updates
+    EVENT TYPES:
+        - procedure_changed: {event_type, session_id, current_procedure, completed_procedures}
+        - audio_test_started: {event_type, session_id}
+        - task_completed: {event_type, session_id, task_type, completed_procedures, current_procedure}
+        - experiment_completed: {event_type, session_id}
+        - participant_registered: {event_type, session_id}
+        - session_terminated: {event_type, session_id, reason}
+    HEADERS: Cache-Control: no-cache, Connection: keep-alive
+    NOTES: Watches global update_event and update_message
+
+POST /api/sessions/{session_id}/trigger-audio-test
+    DESCRIPTION: Triggers audio test on subject interface
+    PROCESSING: Broadcasts audio_test_started event via SSE
+    RETURNS: {success: true}
+
+POST /api/sessions/{session_id}/complete-procedure
+    DESCRIPTION: Marks current procedure as complete
+    REQUEST: {completed: bool, task_type: str, timestamp}
+    PROCESSING:
+        - Adds current_procedure to completed_procedures
+        - Broadcasts task_completed event
+    RETURNS: {success: true, completed_procedures}
+
+POST /api/sessions/{session_id}/set-current-procedure
+    DESCRIPTION: Updates current procedure index
+    REQUEST: {current_procedure: int, procedure_name: str, timestamp}
+    PROCESSING:
+        - Updates session_completions[session_id]['current_procedure']
+        - Broadcasts procedure_changed event
+    RETURNS: {success: true, current_procedure}
+    ERRORS: 500 on update error
+
+GET /api/sessions/{session_id}/get-current-procedure
+    DESCRIPTION: Gets current procedure index
+    RETURNS: {success: true, current_procedure, completed_procedures}
+    ERRORS: 404 if session not found
+
+POST /api/sessions/{session_id}/close
+    DESCRIPTION: Closes SSE connection for session
+    PROCESSING:
+        - Sends None to session queue
+        - Deletes from session_queues and session_completions
+    RETURNS: {success: true}
+
+=== HARDWARE MANAGERS ===
+
+POST /start_event_manager
+    DESCRIPTION: Starts EmotiBit event marker collection
+    PROCESSING:
+        - Checks if data_folder is set
+        - Initializes HDF5 file
+        - Starts event_manager and lsl_manager
+    RETURNS: {success: true, message}
+    ERRORS: 400 if data_folder not set, 500 on error
+
+POST /stop_event_manager
+    DESCRIPTION: Stops EmotiBit event marker collection
+    PROCESSING: Stops event_manager and lsl_manager
+    RETURNS: {success: true, message}
+    ERRORS: 500 on error
+
+POST /start_polar_manager
+    DESCRIPTION: Starts Polar H10 heart rate streaming
+    PROCESSING:
+        - Checks if polar_manager initialized and data_folder set
+        - Initializes HDF5 file if not opened
+        - Starts Polar device
+    RETURNS: {success: true, message} OR {success: false, warning, message} if device not connected
+    ERRORS: 400 if not initialized or data_folder not set
+
+POST /stop_polar_manager
+    DESCRIPTION: Stops Polar H10 heart rate streaming
+    RETURNS: {success: true, message}
+    ERRORS: 400 if not initialized
+
+POST /start_vernier_manager
+    DESCRIPTION: Starts Vernier respiratory sensor streaming
+    PROCESSING:
+        - Checks if vernier_manager initialized and data_folder set
+        - Initializes HDF5 file if not opened
+        - Starts Vernier device
+        - Starts data collection thread
+    RETURNS: {success: true, message} OR {success: false, warning, message} if device not connected
+    ERRORS: 400 if not initialized or data_folder not set
+
+POST /stop_vernier_manager
+    DESCRIPTION: Stops Vernier respiratory sensor streaming
+    RETURNS: {success: true, message}
+    ERRORS: 400 if not initialized
+
+GET /api/manager-status
+    DESCRIPTION: Gets running status of all managers
+    RETURNS: {success: true, status: {event_manager: bool, vernier_manager: bool, polar_manager: bool}, any_running: bool}
+    ERRORS: 500 on error
+
+POST /set_event_marker
+    DESCRIPTION: Sets event marker for managers
+    REQUEST: {event_marker: str}
+    PROCESSING:
+        - Sets event_marker on event_manager, vernier_manager, polar_manager
+        - Sends marker via lsl_manager
+    RETURNS: {status: "Event marker set."}
+    ERRORS: 400 on error
+
+POST /set_condition
+    DESCRIPTION: Sets experimental condition
+    REQUEST: {condition: str}
+    PROCESSING: Sets event_manager.condition
+    RETURNS: {success: true, message}
+    ERRORS: 400 if condition empty, 500 on error
+
+=== AUDIO MANAGEMENT ===
+
+GET /get_audio_devices
+    DESCRIPTION: Gets available audio input devices
+    RETURNS: {devices: [{index, name}]}
+    ERRORS: 400 if recording_manager not initialized, 500 on error
+
+POST /set_device
+    DESCRIPTION: Sets active audio input device
+    REQUEST: {device_index: int}
+    PROCESSING: Calls recording_manager.set_device(device_index)
+    RETURNS: {message: "Device index set."}
+    ERRORS: 400 if invalid index or error
+
+POST /start_recording
+    DESCRIPTION: Starts audio recording
+    PROCESSING:
+        - Calls recording_manager.start_recording()
+        - Waits up to 10 seconds for stream to become active
+    RETURNS: {status: "Recording started."} (200)
+    ERRORS: 400 if timeout or error
+
+POST /reset_audio
+    DESCRIPTION: Resets audio system
+    PROCESSING: Calls recording_manager.reset_audio_system()
+    RETURNS: {message: "Audio system reset successfully..."}
+    ERRORS: 400 if not initialized
+
+POST /test_audio
+    DESCRIPTION: Tests audio recording and transcription
+    PROCESSING:
+        - Stops current recording
+        - Resamples to 16kHz
+        - Transcribes audio
+    RETURNS: {result: transcription_text}
+    ERRORS: 400 if managers not initialized, 500 on error
+
+POST /record_task_audio
+    DESCRIPTION: Records audio for specific task question
+    REQUEST: {action: "start"|"stop", question: str, event_marker: str, condition: str}
+    PROCESSING:
+        - action=start: Starts recording, sets event marker, sends LSL marker
+        - action=stop: Stops recording, saves audio file, logs to subject_manager
+    RETURNS: {message: "Recording started/stopped."}
+    ERRORS: 400 on error
+
+=== TRANSCRIPTION & SER ===
+
+POST /process_audio_files
+    DESCRIPTION: Batch processes all audio files in subject folder
+    PROCESSING:
+        - Lists all .wav files matching {subject_id}_* pattern
+        - Transcribes each file (240s timeout)
+        - Predicts top 3 emotions with confidence scores via SER
+        - Writes CSV with columns: experiment_name, trial_name, subject_id, experimenter_name,
+          timestamp_unix, timestamp_iso, file_name, transcription, SER_Emotion_Label_1-3,
+          SER_Confidence_1-3
+        - Saves to: {subject_folder}/{date}_{experiment}_{trial}_{subject}_SER.csv
+    RETURNS: {message: "Audio files processed successfully.", path: csv_path}
+    ERRORS: 500 on processing error
+
+=== SER BASELINE PROCEDURE ===
+
+POST /initialize_ser_baseline
+    DESCRIPTION: Initializes SER baseline procedure with question set
+    REQUEST: {questionSet: str} (default: "ser_1")
+    PROCESSING: Calls test_manager.reset_ser_baseline(question_set)
+    RETURNS: {status: "SER baseline initialized", question_set, total_questions}
+    ERRORS: 400 if test_manager not initialized
+
+POST /get_ser_question
+    DESCRIPTION: Gets next SER baseline question
+    REQUEST: {questionSet: str} (optional)
+    PROCESSING:
+        - Retrieves current question from test_manager
+        - Increments question index
+        - Stops recording if no more questions
+    RETURNS: {message: "Question found", question: text, question_set, question_index} OR
+             {message: "SER task completed.", question_set, total_completed}
+    ERRORS: 400 on error
+
+POST /process_ser_answer
+    DESCRIPTION: Processes SER baseline answer
+    PROCESSING:
+        - Stops recording
+        - Generates filename: {subject_id}_{timestamp}_ser_baseline_{question_set}_question_{index}.wav
+        - Saves audio file
+        - Logs to subject_manager
+    RETURNS: {status: "Answer processed successfully.", question_set, question_index}
+    ERRORS: 400 if recording_manager not initialized
+
+POST /reset_ser_baseline
+    DESCRIPTION: Resets SER baseline question index
+    REQUEST: {questionSet: str} (default: "ser_1")
+    PROCESSING: Calls test_manager.reset_ser_baseline(question_set)
+    RETURNS: {status: "SER baseline reset successfully", question_set, total_questions}
+    ERRORS: 400 if test_manager not initialized
+
+GET /get_ser_question_sets
+    DESCRIPTION: Gets available SER question sets and counts
+    RETURNS: {status: "success", question_sets: {set_name: count}, current_set}
+    ERRORS: 400 if test_manager not initialized
+
+=== VR ROOM TASK ===
+
+POST /api/vr-room/stop-recording
+    DESCRIPTION: Stops recording for VR Room Task step
+    REQUEST: {stepName: str, eventMarker: str, condition: str}
+    PROCESSING:
+        - Stops recording
+        - Generates filename: {subject_id}_{timestamp}_vr_room_task_{stepName}.wav
+        - Saves audio file
+        - Logs to subject_manager
+    RETURNS: {status: "Recording stopped and saved.", file_name}
+    ERRORS: 400 if recording_manager not initialized
+
+GET /api/vr-room-audio/{audio_set}
+    DESCRIPTION: Gets list of audio files for VR room task audio set
+    RETURNS: {success: true, files: [sorted_filenames], audio_set}
+    NOTES: Files sorted by numeric prefix (e.g., "01-", "02-")
+    ERRORS: 404 if directory not found
+
+GET /api/vr-room-config/{audio_set}
+    DESCRIPTION: Gets configuration JSON for VR room task
+    RETURNS: {success: true, config: json_data}
+    ERRORS: 404 if config.json not found
+
+POST /api/upload-vr-room-audio
+    DESCRIPTION: Uploads audio files for VR room task
+    REQUEST: FormData with audioFiles (multiple), audioSetName
+    PROCESSING:
+        - Sanitizes audio_set_name (alphanumeric + underscore/hyphen, lowercase)
+        - Creates directory: static/audio_files/vr_room_audio/{audio_set_name}
+        - Saves each file with secure_filename
+    RETURNS: {success: true, message, audioSetName, files}
+    ERRORS: 400 if no files or audioSetName missing
+
+POST /api/upload-vr-room-config
+    DESCRIPTION: Uploads configuration JSON for VR room task
+    REQUEST: FormData with configFile, audioSetName, configName (optional)
+    PROCESSING:
+        - Validates JSON format
+        - Generates unique filename: config_{configName}_{timestamp}.json
+        - Saves to: static/audio_files/vr_room_audio/{audio_set_name}/
+    RETURNS: {success: true, message, config, config_filename}
+    ERRORS: 400 if validation fails
+
+=== MAIN TASK (AUDIO-BASED EXPERIMENTAL TASK) ===
+
+POST /api/upload-main-task-audio
+    DESCRIPTION: Uploads audio files for main experimental task
+    REQUEST: FormData with audioFiles (multiple), questionSetName
+    PROCESSING:
+        - Sanitizes questionSetName (alphanumeric + underscore/hyphen, lowercase)
+        - Creates directory: static/audio_files/main_task_audio/{question_set_name}
+        - Validates required files: 1-Intro, 2-PreQuestions, Question files, Wait_For_Instructions
+        - Saves each file
+    RETURNS: {success: true, message, questionSetName, files}
+    ERRORS: 400 if required files missing
+
+GET /api/main-task-audio/{question_set}
+    DESCRIPTION: Gets list of audio files for main task question set
+    RETURNS: {success: true, files: [sorted_filenames], question_set}
+    NOTES: Files sorted by numeric prefix, excludes 1-PRS-Intro.mp3 and Wait_For_Instructions.mp3
+    ERRORS: 404 if directory not found
+
+GET /api/audio-files/{question_set}
+    DESCRIPTION: Gets audio files for PRS or other audio-based procedures
+    RETURNS: {success: true, question_files: [sorted_filenames], total_questions, question_set}
+    NOTES: Excludes 1-PRS-Intro.mp3 and Wait_For_Instructions.mp3
+    ERRORS: 404 if directory not found
+
+=== MENTAL ARITHMETIC TASK (MAT) ===
+
+GET /api/mat-question-sets
+    DESCRIPTION: Gets available Mental Arithmetic Task question sets
+    RETURNS: {success: true, question_sets: {mat_practice, mat_1, mat_2}}
+
+POST /set_current_test
+    DESCRIPTION: Sets current MAT test number
+    REQUEST: {test_number: int}
+    PROCESSING:
+        - Sets test_manager.current_test_index
+        - Resets test_manager.current_question_index to 0
+    RETURNS: {message: "Test set to {test_number}."}
+    ERRORS: 400 if test_number missing or invalid
+
+POST /get_first_question
+    DESCRIPTION: Gets first MAT question and starts recording
+    PROCESSING:
+        - Sets current_question_index to 0
+        - Starts recording
+        - Retrieves first question
+    RETURNS: {message: "Question found.", question, test_index}
+    ERRORS: 400 if managers not initialized
+
+POST /confirm_transcription
+    DESCRIPTION: Stops recording and transcribes MAT answer
+    REQUEST: {test_status: bool, time_up: bool}
+    PROCESSING:
+        - Stops recording
+        - If time_up: sets answer to "Time up."
+        - Else: transcribes audio
+    RETURNS: {transcription, status, message}
+    ERRORS: 400 on error
+
+POST /process_answer
+    DESCRIPTION: Processes MAT answer and advances question
+    REQUEST: {test_status: bool}
+    PROCESSING:
+        - Checks answer correctness
+        - Saves audio file (if not practice test)
+        - Logs to subject_manager
+        - If correct: advances question index
+        - If incorrect: resets to question 0
+        - Starts recording for next question
+    RETURNS: {status, message, result: "correct"|"incorrect"|"complete"}
+    ERRORS: 500 on error
+
+=== DATA PROCESSING ===
+
+POST /api/convert-hdf5-to-csv
+    DESCRIPTION: Converts HDF5 data files to CSV format
+    REQUEST: {session_id: str}
+    PROCESSING:
+        - Calls hdf5_to_csv() on event_manager, vernier_manager, polar_manager
+        - Collects success/error results
+    RETURNS: {success: true, message, converted_files, errors}
+    ERRORS: 400 if no active managers, 500 on error
+
+POST /api/push-to-database
+    DESCRIPTION: Pushes CSV data to PostgreSQL database
+    REQUEST: {session_id: str}
+    PROCESSING:
+        - Loads database config from environment
+        - Creates DatabaseUploader instance
+        - Calls upload_subject_directory() with session metadata
+    RETURNS: {success: true, message, details, subject_dir}
+    ERRORS: 400 if session/subject_dir not found, 500 on error
+
+POST /api/parse-event-markers
+    DESCRIPTION: Parses LSL event markers from EmotiBit ground truth CSV
+    REQUEST: {session_id: str}
+    PROCESSING:
+        - Finds most recent *_emotibit_ground_truth.csv in subject directory
+        - Parses LSL marker lines (type code 'LM')
+        - Extracts: EmotiBitTimestamp, PacketNumber, LslLocalTimestamp, LslMarkerSourceTimestamp,
+          LslMarkerRxTimestamp, MarkerData
+        - Saves CSV: {timestamp}_{subject_id}_emotibit_event_markers.csv
+    RETURNS: {success: true, message, markers_count, file_path, source_file}
+    ERRORS: 400 if no ground truth file or no markers found, 500 on error
+
+POST /import_emotibit_csv
+    DESCRIPTION: Imports EmotiBit ground truth CSV from SD card
+    REQUEST: FormData with emotibit_file or emotibit_files (multiple)
+    PROCESSING:
+        - Validates CSV file type
+        - Renames to: {time_started}_{subject_id}_emotibit_ground_truth[_{N}].csv
+        - Handles duplicate filenames with counter
+        - Saves to event_manager.data_folder
+    RETURNS: {success: true, message, file_path(s), uploaded_files} OR
+             {success: false, message, errors}
+    ERRORS: 400 if no files or invalid type
+
+=== FORM & SURVEY MANAGEMENT ===
+
+POST /api/upload-survey
+    DESCRIPTION: Uploads survey file
+    REQUEST: FormData with file
+    PROCESSING:
+        - Saves to surveys/ directory
+        - Uses secure_filename
+    RETURNS: {success: true, filename}
+    ERRORS: 400 if no file
+
+POST /api/get-autofilled-survey-url
+    DESCRIPTION: Generates autofilled Google Forms URL with subject ID
+    REQUEST: {session_id, survey_name, survey_url}
+    PROCESSING:
+        - Gets subject_id from subject_manager
+        - Calls form_manager.customize_form_url(survey_url, subject_id)
+        - Replaces "Sample+ID" placeholder with actual subject ID
+    RETURNS: {success: true, autofilled_url, survey_name}
+    ERRORS: 400 if session/subject_id not found, 500 on error
+
+=== CONSENT FORMS ===
+
+POST /api/upload-consent-form
+    DESCRIPTION: Uploads consent form PDF
+    REQUEST: FormData with file, experiment_name
+    PROCESSING:
+        - Validates PDF file type
+        - Sanitizes experiment_name (lowercase, underscores)
+        - Creates directory: static/consent_forms/{experiment_name}
+        - Saves with secure_filename
+    RETURNS: {success: true, message, filePath, filename, experiment_name}
+    ERRORS: 400 if validation fails, 500 on error
+
+GET /static/consent_forms/{experiment_name}/{filename}
+    DESCRIPTION: Serves consent form PDFs
+    RETURNS: PDF file
+    ERRORS: 404 if not found
+
+=== EXTERNAL APPLICATION LAUNCHERS ===
+
+POST /api/launch-emotibit-osc
+    DESCRIPTION: Launches EmotiBit Oscilloscope application
+    PROCESSING: Opens executables/EmotiBitOscilloscope.app via subprocess
+    RETURNS: {success: true, message}
+    ERRORS: 500 on launch error
+
+POST /api/launch-emotibit-parser
+    DESCRIPTION: Launches EmotiBit DataParser application
+    PROCESSING: Opens executables/EmotiBitDataParser.app via subprocess
+    RETURNS: {success: true, message}
+    ERRORS: 500 on launch error
+
+=== FILE UPLOADS ===
+
+POST /api/upload-config
+    DESCRIPTION: Uploads test configuration JSON file
+    REQUEST: FormData with file, configType
+    PROCESSING:
+        - Validates JSON file type
+        - Generates unique filename: {configType}_{uuid}_{original_name}
+        - Saves to TEST_FILES_DIR
+        - Validates JSON format
+    RETURNS: {success: true, message, filePath, filename}
+    ERRORS: 400 if validation fails, 500 on error
+
+=== SERVER MANAGEMENT ===
+
+POST /api/shutdown
+    DESCRIPTION: Gracefully shuts down Flask server
+    PROCESSING:
+        - Checks for active sessions (refuses if any exist)
+        - Sets SHUTDOWN_FLAG
+        - Stops all managers (event, vernier, polar, recording)
+        - Waits for heartbeat monitor thread to stop
+        - Sends SIGTERM to process
+    RETURNS: {success: true, message}
+    ERRORS: 400 if active sessions exist, 500 on error
+
+=== STATIC FILE SERVING ===
+
+GET /experiments/{filename}
+    DESCRIPTION: Serves files from experiments directory
+    NOTES: Used for instruction-steps.json, experiment-config.json, etc.
+
+GET / OR /{path}
+    DESCRIPTION: Serves React frontend application
+    NOTES: Catches all non-API routes for client-side routing
+
+=== HELPER FUNCTIONS ===
+
+FUNCTION: get_database_config()
+    DESCRIPTION: Validates and returns database configuration from .env
+    RETURNS: {host, database, user, password, port}
+    RAISES: DatabaseConfigError if required vars missing or invalid
+
+FUNCTION: validate_environment()
+    DESCRIPTION: Validates database config at startup, prints warnings if misconfigured
+    NOTES: Called on module load
+
+FUNCTION: generate_experiment_id(experiment_name="")
+    DESCRIPTION: Generates unique experiment ID from name + timestamp
+    PROCESSING:
+        - Sanitizes name (alphanumeric + space/hyphen/underscore)
+        - Converts to lowercase, replaces spaces with underscores
+        - Truncates to 30 characters
+        - Appends timestamp: YYYYMMDD_HHMMSS
+    RETURNS: "{clean_name}_{timestamp}" or "experiment_{timestamp}"
+
+FUNCTION: broadcast_to_session(session_id, event_data)
+    DESCRIPTION: Broadcasts SSE event to specific session
+    PROCESSING:
+        - Sets global update_message and triggers update_event
+        - Puts event_data in session_queues[session_id] if available
+
+FUNCTION: instantiate_modules(template_path)
+    DESCRIPTION: Initializes manager instances based on experiment procedures
+    PROCESSING:
+        - Loads experiment template from template_path
+        - Checks dataCollectionMethods configuration
+        - Analyzes procedures for required modules:
+            - audio_ser: recording_manager, audio_file_manager, transcription_manager, ser_manager
+            - respiratory: vernier_manager
+            - polar_hr: polar_manager
+            - emotibit: lsl_manager
+            - Mental Arithmetic Task: test_manager
+            - VR Room Task: audio_ser components
+        - Initializes only required managers
+    NOTES: Called during /api/experiments/{id}/run
+
+FUNCTION: process_procedure_for_psychopy(proc_data)
+    DESCRIPTION: Processes procedure data to extract configuration and wizard data
+    PROCESSING:
+        - Extracts platform from configuration['psychopy-setup']['platform'] or top-level
+        - Builds wizardData object with all configuration fields
+        - Preserves rawConfiguration for reference
+    RETURNS: Processed procedure object with id, instanceId, name, duration, configuration, wizardData, platform
+
+FUNCTION: reset_experiment_managers()
+    DESCRIPTION: Resets all manager instances for new experiment
+    PROCESSING:
+        - Stops all running managers
+        - Sets all manager globals to None (except subject_manager, event_manager, form_manager)
+        - Reinitializes SubjectManager, EventManager, FormManager
+    NOTES: Called during experiment completion and cleanup
+
+FUNCTION: transcribe_audio(file, timeout_seconds=30)
+    DESCRIPTION: Transcribes audio file using TranscriptionManager
+    PROCESSING:
+        - Stops recording if active
+        - Resamples to 16kHz
+        - Calls transcription_manager.transcribe()
+    RETURNS: Transcription text or error message
+    NOTES: Used internally, not a route
+
+FUNCTION: allowed_file(filename)
+    DESCRIPTION: Checks if filename has allowed extension
+    ALLOWED_EXTENSIONS: {'json'}
+    RETURNS: Boolean
+
+FUNCTION: validate_json_file(filepath)
+    DESCRIPTION: Validates that file contains valid JSON
+    RETURNS: Boolean
+
+=== BACKGROUND THREADS ===
+
+THREAD: check_stale_sessions()
+    DESCRIPTION: Monitors for stale sessions where experimenter closed without cleanup
+    PROCESSING:
+        - Runs every 5 seconds
+        - Checks experimenter_heartbeats for sessions with no heartbeat for HEARTBEAT_TIMEOUT (60s)
+        - Increments missed_beats counter
+        - After HEARTBEAT_GRACE_ATTEMPTS (3) missed beats, initiates cleanup_experimenter_session()
+    THREAD-SAFE: Uses cleanup_lock
+    SHUTDOWN: Waits on SHUTDOWN_FLAG event
+
+    Started on app startup as daemon thread named "HeartbeatMonitorThread"
+
+=== SESSION DATA STRUCTURE ===
+
+ACTIVE_SESSIONS[session_id]:
+    session_id (str): Unique session identifier
+    experiment_id (str): Template experiment ID
+    experiment_name (str): Experiment display name
+    status (str): Session status (created, experiment_trial_set, participant_registered, consent_completed, completed)
+    created_at (str): ISO timestamp
+    updated_at (str): ISO timestamp
+    template (dict): Full experiment template object
+    experiment_folder_name (str): Sanitized experiment folder name
+    trial_name (str): Sanitized trial name
+    experimenter_name (str): "{first_name} {last_name}"
+    subject_folder (str): Subject folder name (date_sanitized_email)
+    subject_dir (str): Full path to subject directory
+    participant_info (dict): {first_name, last_name, email, pid, sona_class, form_completed_at}
+    consent_record (dict): {consent_given, consent_method, timestamp, ip_address, user_agent}
+    _cleanup_in_progress (bool): Flag to prevent double cleanup
+
+session_completions[session_id]:
+    completed_procedures (list[int]): Indices of completed procedures
+    current_procedure (int): Current procedure index
+
+experimenter_heartbeats[session_id]:
+    last_seen (float): Unix timestamp of last heartbeat
+    missed_beats (int): Consecutive missed heartbeats
+
+=== MANAGER LIFECYCLE ===
+
+Initialization Flow:
+    1. Application starts → Validates environment → Initializes SubjectManager, EventManager
+    2. Experiment run → instantiate_modules() → Initializes required managers
+    3. Participant registration → Sets metadata on all managers
+    4. Managers create HDF5 files when started
+
+Cleanup Flow:
+    1. Experimenter heartbeat stops → check_stale_sessions() detects
+    2. cleanup_experimenter_session() called → Stops all managers
+    3. reset_experiment_managers() → Sets managers to None
+    4. Session deleted from ACTIVE_SESSIONS
+
+=== THREADING & SYNCHRONIZATION ===
+
+cleanup_lock (threading.Lock): Protects ACTIVE_SESSIONS and experimenter_heartbeats access
+update_event (threading.Event): Signals new SSE message available
+SHUTDOWN_FLAG (threading.Event): Signals graceful shutdown
+
+Thread-safe operations:
+    - ACTIVE_SESSIONS reads/writes
+    - experimenter_heartbeats updates
+    - Session cleanup operations
+
+=== ERROR HANDLING ===
+
+Database configuration errors:
+    - Validates .env at startup
+    - Prints detailed instructions if config invalid
+    - Operations fail gracefully with error messages
+
+Hardware manager errors:
+    - Polar/Vernier managers return warnings if device not connected
+    - Allow experiment to continue without data collection
+    - User informed via UI
+
+Session errors:
+    - 404 if session not found
+    - 400 if required fields missing or validation fails
+    - 500 for unexpected server errors
+
+=== SECURITY CONSIDERATIONS ===
+
+File uploads:
+    - Uses secure_filename() for all uploaded files
+    - Validates file types (JSON, PDF, CSV, audio)
+    - Sanitizes all user-provided names
+    - Validates JSON format before accepting
+
+Session management:
+    - Session IDs generated from experiment ID + timestamp (not predictable)
+    - Heartbeat mechanism prevents stale sessions
+    - Cleanup prevents resource leaks
+
+Database:
+    - Credentials loaded from environment variables (.env)
+    - Not committed to version control
+
+=== STARTUP SEQUENCE ===
+
+1. Load environment variables (.env)
+2. Validate database configuration
+3. Initialize directories (templates, subject_data, test_files, consent_forms)
+4. Initialize SubjectManager and EventManager
+5. Configure Flask app with CORS
+6. Start heartbeat monitor thread (check_stale_sessions)
+7. Run Flask server on 127.0.0.1:5001
+
+=== SHUTDOWN SEQUENCE ===
+
+1. Check for active sessions (refuse if any)
+2. Set SHUTDOWN_FLAG
+3. Stop all managers (event, vernier, polar, recording)
+4. Wait for heartbeat monitor thread (2s timeout)
+5. Send SIGTERM to process
+
+=== NOTES ===
+
+- Server runs on port 5001 to avoid conflicts
+- Debug mode enabled for development
+- All audio files stored in subject-specific directories
+- HDF5 files converted to CSV before database upload
+- LSL markers sent alongside EmotiBit event markers
+- Session restoration supported via check-active endpoint
+- Multiple EmotiBit CSVs can be imported per session
+- Question sets for MAT and SER baseline configurable
+- VR Room Task supports multiple audio sets with unique configs
+- PsychoPy integration supports custom external platforms
+- Experimenter interface controls main workflow
+- Subject interface displays procedures and collects responses
+- SSE provides real-time synchronization between interfaces
+"""
+
 from flask import Flask, send_from_directory, send_file, jsonify, request, Response
 from flask_cors import CORS
 import os
@@ -1465,8 +2346,7 @@ def add_psychopy_procedure():
     
 def process_procedure_for_psychopy(proc_data):
     """
-    Process procedure data to ensure PsychoPy integration fields are properly handled
-    while maintaining backward compatibility
+    Process procedure data for external software. Function needs renaming.
     """
     # Extract platform from configuration if available, otherwise use top-level
     config_platform = proc_data.get('configuration', {}).get('psychopy-setup', {}).get('platform')
@@ -1525,7 +2405,7 @@ def process_procedure_for_psychopy(proc_data):
             'vrRoomEditableConfig': proc_data.get('configuration', {}).get('sequence-editor', {}).get('editableConfig'),
             'vrRoomConditionMarker': proc_data.get('configuration', {}).get('task-description', {}).get('conditionMarker'),
             'vrRoomTaskNotes': proc_data.get('configuration', {}).get('task-description', {}).get('taskNotes'),
-            
+
             # Store complete configuration for future reference
             'rawConfiguration': proc_data.get('configuration', {}),
 

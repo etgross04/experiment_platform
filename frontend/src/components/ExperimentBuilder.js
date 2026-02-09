@@ -1,3 +1,296 @@
+/**
+ * ExperimentBuilder Component - React Interface for Psychological Experiment Design
+ * 
+ * @component ExperimentBuilder
+ * @description Drag-and-drop interface for assembling and configuring psychological experiments.
+ * Manages experimental procedures, configurations, templates, and paradigms.
+ * 
+ * @props
+ * @param {Function} onBack - Callback to return to home view
+ * 
+ * @state
+ * @property {string} experimentName - Name of the current experiment design
+ * @property {Array<Procedure>} selectedProcedures - Ordered array of procedures in experiment
+ * @property {string|null} selectedProcedureId - Currently selected procedure instanceId
+ * @property {Procedure|null} currentWizardProcedure - Procedure being configured in wizard
+ * @property {Object|null} config - Loaded experiment configuration (procedures, categories, paradigms, wizardSteps)
+ * @property {boolean} loading - Loading state for initial configuration fetch
+ * @property {string|null} error - Error message from configuration loading
+ * @property {boolean} showTemplateSaveWizard - Template save wizard visibility
+ * @property {boolean} isEditMode - Whether editing existing experiment
+ * @property {string|null} editingExperimentId - ID of experiment being edited
+ * @property {boolean} isLoadingEdit - Loading state for edit mode initialization
+ * 
+ * @typedef {Object} Procedure
+ * @property {string} id - Procedure type identifier (e.g., 'consent', 'prs', 'main-task')
+ * @property {string} name - Display name
+ * @property {number} duration - Base duration in minutes
+ * @property {number} customDuration - User-configured duration in minutes
+ * @property {string} color - Hex color code for visual identification
+ * @property {boolean} required - Whether procedure is mandatory
+ * @property {string} [platform] - External platform name (e.g., 'PsychoPy', 'OpenSesame')
+ * @property {number} position - Order index in experiment sequence
+ * @property {string} instanceId - Unique instance identifier (format: {id}_{timestamp}_{suffix})
+ * @property {Object} configuration - Procedure-specific configuration data
+ * @property {Object} wizardData - Legacy wizard configuration structure
+ * 
+ * @typedef {Object} Configuration
+ * @property {Object.<string, ProcedureDefinition>} procedures - Available procedures keyed by ID
+ * @property {Object.<string, Category>} categories - Procedure categories
+ * @property {Object.<string, Paradigm>} paradigms - Experimental templates
+ * @property {Object.<string, Array<WizardStep>>} wizardSteps - Configuration wizard definitions
+ * 
+ * @typedef {Object} ProcedureDefinition
+ * @property {string} id - Unique procedure identifier
+ * @property {string} name - Display name
+ * @property {number} duration - Default duration in minutes
+ * @property {string} color - Hex color code
+ * @property {boolean} required - Whether procedure is mandatory
+ * @property {string} category - Category ID this procedure belongs to
+ * @property {string} [platform] - External platform name
+ * @property {Array<string>} [instructionSteps] - Experimenter instruction steps
+ * 
+ * @typedef {Object} Category
+ * @property {string} name - Display name
+ * @property {string} description - Category description
+ * @property {string} [icon] - Icon/emoji representation
+ * 
+ * @typedef {Object} Paradigm
+ * @property {string} name - Template display name
+ * @property {string} description - Template description
+ * @property {string} color - Hex color code
+ * @property {Array<ParadigmProcedure>} procedures - Procedures in this template
+ * 
+ * @typedef {Object} ParadigmProcedure
+ * @property {string} id - Procedure type identifier
+ * @property {number} position - Order in paradigm
+ * @property {string} [customName] - Override for procedure name
+ * @property {number} [customDuration] - Override for procedure duration
+ * @property {Object} [preConfigured] - Pre-filled configuration data
+ * 
+ * @typedef {Object} WizardStep
+ * @property {string} id - Step identifier (e.g., 'collection-methods', 'survey-details')
+ * @property {string} title - Step display title
+ * @property {string} description - Step description/instructions
+ * 
+ * @functions
+ * 
+ * @function createDataCollectionProcedure
+ * @returns {Procedure} Data collection procedure with sensor configuration template
+ * @description Creates mandatory data collection procedure tracking sensor configurations.
+ * Position always 0. Configuration includes: polar_hr, vernier_resp, emotibit, audio_ser (all false by default).
+ * 
+ * @function createInitialConsentProcedure
+ * @param {Configuration} config - Experiment configuration
+ * @returns {Procedure} Consent form procedure
+ * @description Creates consent form procedure from configuration. Position always 1.
+ * Falls back to default if not defined in config.
+ * 
+ * @function procedureRequiresAudio
+ * @param {string} procedureId - Procedure type identifier
+ * @param {Object} configuration - Procedure configuration
+ * @returns {boolean} Whether procedure requires audio recording
+ * @description Determines if procedure needs audio enabled. Returns true for:
+ * - prs (Perceived Restorativeness Scale)
+ * - main-task
+ * - vr-room-task
+ * - ser-baseline
+ * - stressor (when Mental Arithmetic Task selected)
+ * 
+ * @function shouldAutoEnableAudio
+ * @param {Array<Procedure>} procedures - Array of procedures
+ * @returns {boolean} Whether any procedure requires audio
+ * @description Checks if any procedure in array requires audio recording.
+ * 
+ * @function createLegacyWizardData
+ * @param {Object} [configuration={}] - Configuration object
+ * @returns {Object} Legacy wizard data structure
+ * @description Creates backward-compatible wizard data with null defaults and rawConfiguration.
+ * 
+ * @api_endpoints
+ * 
+ * GET /api/experiment-config
+ * @returns {Configuration} Complete experiment configuration
+ * @description Loads procedures, categories, paradigms, and wizard step definitions.
+ * 
+ * POST /api/experiments
+ * @body {ExperimentData} Experiment design data
+ * @returns {{success: boolean, id: string, error?: string}}
+ * @description Saves new experiment design.
+ * 
+ * PUT /api/experiments/:id
+ * @param {string} id - Experiment ID
+ * @body {ExperimentData} Updated experiment data
+ * @returns {{success: boolean, id: string, error?: string}}
+ * @description Updates existing experiment.
+ * 
+ * GET /api/experiments/:id
+ * @param {string} id - Experiment ID
+ * @returns {ExperimentData} Experiment design
+ * @description Retrieves experiment for editing.
+ * 
+ * POST /api/add-psychopy-procedure
+ * @body {ProcedureForm} New procedure definition
+ * @returns {{success: boolean, procedure: ProcedureDefinition, error?: string}}
+ * @description Adds custom external procedure to library.
+ * 
+ * POST /api/save-template
+ * @body {TemplateData} Template definition
+ * @returns {{success: boolean, error?: string}}
+ * @description Saves experiment design as reusable template.
+ * 
+ * GET /api/vr-room-audio/:audioSetName
+ * @param {string} audioSetName - Audio set identifier
+ * @returns {{files: Array<string>}}
+ * @description Lists available audio files for VR Room Task.
+ * 
+ * POST /api/upload-vr-room-audio
+ * @body {FormData} audioSetName, audioFiles
+ * @returns {{success: boolean, error?: string}}
+ * @description Uploads audio files for VR Room Task.
+ * 
+ * POST /api/upload-vr-room-config
+ * @body {FormData} audioSetName, configFile
+ * @returns {{success: boolean, config: Object, error?: string}}
+ * @description Uploads VR Room Task sequence configuration.
+ * 
+ * POST /api/upload-main-task-audio
+ * @body {FormData} questionSetName, audioFiles
+ * @returns {{success: boolean, error?: string}}
+ * @description Uploads audio files for Main Task.
+ * 
+ * @typedef {Object} ExperimentData
+ * @property {string} [id] - Experiment ID (for updates)
+ * @property {string} name - Experiment name
+ * @property {Array<Procedure>} procedures - Ordered procedures
+ * @property {Object} dataCollectionMethods - Sensor configuration (polar_hr, vernier_resp, emotibit, audio_ser)
+ * @property {string} created_at - ISO timestamp
+ * @property {number} estimated_duration - Total duration in minutes
+ * 
+ * @typedef {Object} ProcedureForm
+ * @property {string} name - Procedure name
+ * @property {number} duration - Duration in minutes (1-120)
+ * @property {string} category - Category ID
+ * @property {string} platform - Platform name ('PsychoPy', 'OpenSesame', etc.)
+ * @property {string} color - Hex color code
+ * @property {boolean} required - Whether mandatory
+ * @property {Array<string>} instructionSteps - Experimenter instructions
+ * 
+ * @typedef {Object} TemplateData
+ * @property {string} name - Template name
+ * @property {string} description - Template description
+ * @property {string} category - Category ID or new category name
+ * @property {string} color - Hex color code
+ * @property {Array<ParadigmProcedure>} procedures - Template procedures
+ * 
+ * @wizard_steps
+ * 
+ * Common Steps:
+ * - collection-methods: Sensor/data collection configuration
+ * - duration: Procedure duration configuration
+ * - validation: Configuration summary and review
+ * 
+ * Consent Form:
+ * - document: External consent form link
+ * 
+ * Survey/Demographics:
+ * - survey-method: Delivery method (external/embedded Google Forms)
+ * - survey-link: URL configuration
+ * - setup-instructions: Autofill setup guide
+ * - survey-details: Survey name and URL
+ * 
+ * Task Procedures (PRS, Main Task, SER):
+ * - question-set: Question set selection
+ * - task-description: Condition marker configuration
+ * 
+ * VR Room Task:
+ * - session-type-selection: Practice/first_room/subsequent_room
+ * - audio-set-selection: Audio file upload and management
+ * - sequence-editor: Step sequence configuration
+ * 
+ * Break:
+ * - media-selection: Video selection
+ * 
+ * Stressor:
+ * - stressor-type: Task type selection (Mental Arithmetic/Time Pressure)
+ * 
+ * SART:
+ * - task-setup: Standard vs custom configuration
+ * 
+ * External Procedures:
+ * - psychopy-setup: External platform configuration
+ * 
+ * @behavior
+ * 
+ * Initialization:
+ * - Loads experiment-config.json on mount
+ * - Creates data-collection (position 0) and consent (position 1) procedures automatically
+ * - Checks URL for ?edit={id} parameter to load existing experiment
+ * 
+ * Auto-Enable Audio:
+ * - Monitors procedures for audio requirements
+ * - Automatically enables audio_ser in data-collection when needed
+ * - Triggers on procedure addition or configuration changes
+ * 
+ * Drag-and-Drop:
+ * - Procedures draggable from library to canvas (except consent)
+ * - Procedures reorderable on canvas (except positions 0-1)
+ * - Paradigms replace all procedures except data-collection
+ * - Data-collection and consent are sticky at positions 0-1
+ * 
+ * Edit Mode:
+ * - Loads experiment from URL parameter
+ * - Populates canvas with saved procedures
+ * - Save button updates existing experiment
+ * - Exits edit mode after successful save
+ * 
+ * Configuration Validation:
+ * - Consent: Requires consentLink
+ * - Survey: Requires surveyName and googleFormUrl
+ * - Main Task: Requires conditionMarker
+ * - Break: Requires selectedVideo
+ * - Validates before proceeding to next wizard step
+ * 
+ * @subcomponents
+ * 
+ * @component TemplateSaveWizard
+ * @description Modal for saving experiment as reusable template
+ * @props {Function} onClose, {Function} onSave, {Configuration} config
+ * 
+ * @component AddProcedureForm
+ * @description Modal for creating custom external procedures
+ * @props {Function} onClose, {Function} onProcedureAdded, {Configuration} config
+ * 
+ * @component ExampleExperimentView
+ * @description Procedure library with collapsible categories and templates
+ * @props {Function} onDragStart, {Function} onParadigmDragStart, {Configuration} config, {Function} onProcedureAdded
+ * 
+ * @component ExperimentCanvas
+ * @description Main design canvas with procedure sequencing
+ * @props See ExperimentCanvas contract
+ * 
+ * @component ProcedureWizard
+ * @description Multi-step configuration wizard for procedures
+ * @props {Procedure} procedure, {Function} onClose, {Function} onSave, {Configuration} config
+ * 
+ * @component AudioFileSelector
+ * @description Dropdown selector for audio files from uploaded sets
+ * @props {string} audioSetName, {string} selectedFile, {Function} onChange
+ * 
+ * @component WizardStepContent
+ * @description Renders form fields for specific wizard steps
+ * @props {string} stepId, {string} procedureId, {*} value, {Object} configuration, {Function} onChange
+ * 
+ * @notes
+ * - Data-collection and consent procedures cannot be removed or reordered
+ * - Instance IDs prevent duplicate procedures from conflicting
+ * - Configuration validation prevents incomplete setups
+ * - Template system excludes data-collection (auto-added per experiment)
+ * - VR Room Task audio files shared across multiple instances
+ * - Each VR Room Task instance can have unique sequence configuration
+ * - URL parameters support direct edit mode: ?edit={experimentId}
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
 import './ExperimentBuilder.css';
 

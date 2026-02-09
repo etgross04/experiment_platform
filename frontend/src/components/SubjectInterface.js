@@ -1,3 +1,299 @@
+/**
+ * SubjectInterface Component - Participant-Facing Experiment Interface
+ * 
+ * @component SubjectInterface
+ * @description Main interface for experiment participants, handling consent, participant
+ * registration, procedure execution, and real-time synchronization with experimenter interface.
+ * Displays experimental procedures and collects participant responses.
+ * 
+ * @state
+ * @property {boolean} consentMode - Whether in standalone consent form mode
+ * @property {boolean} consentCompleted - Whether consent has been completed
+ * @property {Ref} procedureComponentRef - Reference to current procedure component
+ * @property {string} currentTask - Current task state ('waiting'|'active'|'completed'|'audio_test')
+ * @property {string|null} sessionId - Active session ID from URL parameters
+ * @property {Procedure|null} currentProcedure - Currently active procedure object
+ * @property {Object|null} experimentData - Loaded experiment configuration
+ * @property {boolean} showForm - Whether to show participant registration form
+ * @property {Object} formData - Participant registration form data
+ * @property {Object} formErrors - Form validation errors
+ * @property {boolean} emailsMatch - Whether email and emailConfirm fields match
+ * @property {number} currentProcedureIndex - Index of current procedure in experiment
+ * @property {boolean} showAudioTest - Whether to show audio test interface
+ * @property {boolean} sessionTerminated - Whether session has been closed by experimenter
+ * @property {boolean} restoredState - Whether session state was restored from server
+ * @property {boolean} experimentCompleteForSubject - Whether all procedures completed
+ * @property {Ref} currentProcedureIndexRef - Ref to current procedure index for SSE callbacks
+ * 
+ * @typedef {Object} FormData
+ * @property {string} firstName - Participant first name
+ * @property {string} lastName - Participant last name
+ * @property {string} email - Participant email address
+ * @property {string} emailConfirm - Email confirmation
+ * @property {string} pid - Participant ID (optional)
+ * @property {string} sonaClass - SONA class for credit assignment (optional)
+ * 
+ * @typedef {Object} Procedure
+ * @property {string} id - Procedure type identifier
+ * @property {string} name - Procedure display name
+ * @property {string} instanceId - Unique instance identifier
+ * @property {Object} configuration - Procedure-specific configuration
+ * @property {Object} wizardData - Legacy wizard configuration
+ * @property {string} [platform] - External platform name
+ * 
+ * @api_endpoints
+ * 
+ * Session Management:
+ * GET /api/sessions/{sessionId}/check-active
+ * @returns {{success: boolean, active: boolean, current_procedure?: number, completed_procedures?: Array<number>}}
+ * @description Checks session status and retrieves current state (polled every 30 seconds)
+ * 
+ * GET /api/sessions/{sessionId}/stream
+ * @description Server-Sent Events stream for real-time updates
+ * SSE Events:
+ * - procedure_changed: {event_type, session_id, current_procedure}
+ * - audio_test_started: {event_type, session_id}
+ * - experiment_completed: {event_type, session_id}
+ * 
+ * POST /api/sessions/{sessionId}/participant
+ * @body {participantInfo: FormData, timestamp: string}
+ * @description Saves participant registration information
+ * 
+ * POST /api/sessions/{sessionId}/complete-procedure
+ * @body {completed: boolean, task_type?: string, timestamp: string}
+ * @description Marks current procedure as complete
+ * 
+ * Audio Testing:
+ * POST /test_audio
+ * @returns {{result: string}}
+ * @description Tests audio recording and returns transcription
+ * Uses startRecording() from utils/helpers.js
+ * 
+ * Experiment Data:
+ * GET /api/experiments/{experimentId}
+ * @returns {Experiment} Experiment configuration with procedures
+ * @description Loads experiment design (experimentId extracted from sessionId)
+ * 
+ * @functions
+ * 
+ * @function isExperimentCompleteForSubject
+ * @returns {boolean} Whether all non-config procedures completed
+ * @description Filters out consent/data-collection, checks if current index past last procedure
+ * 
+ * @function loadExperimentData
+ * @async
+ * @param {string} sessionId - Session ID
+ * @description Extracts experiment ID from session, loads experiment data, sets first procedure
+ * Session ID format: {experimentId}_{timestamp}_{random}
+ * 
+ * @function handleInputChange
+ * @param {Event} e - Input change event
+ * @description Updates form data, validates email matching, clears field errors
+ * 
+ * @function validateForm
+ * @returns {Object} Validation errors object
+ * @description Validates registration form:
+ * - firstName, lastName required
+ * - email required and valid format
+ * - emailConfirm required and matches email
+ * - pid, sonaClass optional
+ * 
+ * @function handleFormSubmit
+ * @async
+ * @param {Event} e - Form submit event
+ * @description Validates and submits participant registration
+ * 
+ * @function handleConsentComplete
+ * @async
+ * @description Completes consent procedure:
+ * 1. Calls procedure-specific completion (if ref exists)
+ * 2. Records completion via API
+ * 3. Updates state to show registration form
+ * 
+ * @function handleTaskComplete
+ * @async
+ * @description Completes current procedure:
+ * 1. Calls procedure-specific completion (if ref exists)
+ * 2. Records completion via API
+ * 3. Sets event marker to 'subject_idle'
+ * 4. Shows completion message, then returns to waiting
+ * 
+ * @function handleAudioTestComplete
+ * @description Hides audio test, returns to waiting state
+ * 
+ * @function isPsychoPyTask
+ * @param {Procedure} procedure - Procedure object
+ * @returns {boolean} Whether procedure uses external platform
+ * @description Checks configuration['psychopy-setup'].usePsychoPy or wizardData.usePsychoPy
+ * 
+ * @function getProcedureComponent
+ * @param {string} procedureName - Procedure name
+ * @param {Object} procedureConfig - Procedure configuration
+ * @param {string} procedureId - Procedure ID
+ * @param {Procedure} procedure - Full procedure object
+ * @returns {React.Component|null} Procedure component or null
+ * @description Maps procedure to React component:
+ * - External platform → PsychoPyTransitionComponent
+ * - Mental Arithmetic Task stressor → MATComponent
+ * - By ID: consent, ser-baseline, break, demographics, biometric-baseline
+ * - By name: consent, mat, survey, ser baseline, break, demographics, biometric baseline
+ * 
+ * @function renderParticipantForm
+ * @returns {JSX.Element} Registration form or termination screen
+ * @description Renders participant info form with validation
+ * 
+ * @function renderProcedureContainer
+ * @returns {JSX.Element} Current procedure component with header/actions
+ * @description Wraps procedure component with step counter and complete button
+ * 
+ * @function renderCurrentTask
+ * @returns {JSX.Element} Current task view based on state
+ * @description Routes to appropriate view:
+ * - showAudioTest → AudioTestComponent
+ * - PRS/Main Task/VR Room Task → Experimenter-assisted waiting screen
+ * - active → Procedure container (with restoration notice if applicable)
+ * - completed → Completion message
+ * - waiting → Waiting screen
+ * 
+ * @lifecycle
+ * 
+ * Initialization:
+ * 1. Extracts session ID and mode from URL (?session={id}&mode={mode})
+ * 2. If mode=consent, enters standalone consent mode
+ * 3. Loads experiment data from session ID
+ * 4. Establishes SSE connection for real-time updates
+ * 5. Starts session activity polling (30-second interval)
+ * 
+ * Consent Mode Flow:
+ * 1. URL parameter mode=consent detected
+ * 2. Shows standalone consent form
+ * 3. On completion, records and shows registration form
+ * 
+ * Normal Flow:
+ * 1. Show participant registration form
+ * 2. Submit participant info
+ * 3. Wait for experimenter to start procedures
+ * 4. Execute procedures via SSE updates
+ * 5. Complete procedures and wait for next
+ * 
+ * Session State Restoration:
+ * - Polls /check-active every 30 seconds
+ * - Restores current_procedure if different from local state
+ * - Shows restoration notice on UI
+ * - Only restores if experiment not complete for subject
+ * 
+ * Cleanup:
+ * - Warns before unload (progress saved message)
+ * - Closes SSE connection
+ * - Clears polling interval
+ * - On experiment completion, closes window after 2-second delay
+ * 
+ * @sse_events
+ * 
+ * procedure_changed:
+ * - Updates currentProcedureIndex
+ * - Loads new procedure
+ * - Sets currentTask to 'active'
+ * 
+ * audio_test_started:
+ * - Shows audio test interface
+ * - Sets currentTask to 'audio_test'
+ * 
+ * experiment_completed:
+ * - Closes SSE connection
+ * - Displays completion message
+ * - Attempts to close window after 2 seconds
+ * - Falls back to manual close instruction
+ * 
+ * @subcomponents
+ * 
+ * @component AudioTestComponent
+ * @description Pre-test audio system verification
+ * @props {string} sessionId, {Function} onComplete
+ * Flow:
+ * 1. Shows instructions ("She sells seashells...")
+ * 2. Start/stop recording buttons
+ * 3. Displays transcription
+ * 4. Complete button sends result to server
+ * 
+ * Procedure Components (dynamically loaded):
+ * - ConsentForm
+ * - MATComponent (Mental Arithmetic Task)
+ * - PsychoPyTransitionComponent
+ * - SurveyComponent
+ * - SERBaselineComponent
+ * - BreakComponent
+ * - DemographicsSurveyComponent
+ * - BiometricBaselineComponent
+ * 
+ * @procedure_ref
+ * procedureComponentRef allows calling procedure-specific completion handlers:
+ * - ConsentForm: Validates consent agreement
+ * - Other components: Custom validation/cleanup
+ * Called before generic completion in handleTaskComplete/handleConsentComplete
+ * 
+ * @special_procedures
+ * 
+ * PRS, Main Task, VR Room Task:
+ * - Not rendered in subject interface
+ * - Shows "experimenter will assist" waiting screen
+ * - Controlled via experimenter's tool panel
+ * - Completion triggered from experimenter interface
+ * 
+ * External Platform Procedures (PsychoPy, etc.):
+ * - Shows PsychoPyTransitionComponent
+ * - Displays platform name and instructions
+ * - Experimenter launches external software
+ * - Subject completes when external task done
+ * 
+ * @behavior
+ * 
+ * Email Validation:
+ * - Real-time matching check on both email fields
+ * - Shows warning if mismatch
+ * - Shows success checkmark if match
+ * - Prevents submission if mismatch
+ * 
+ * Session Termination:
+ * - Detected via /check-active endpoint
+ * - Shows termination screen
+ * - Prevents further interaction
+ * - User instructed to close window
+ * 
+ * Experiment Completion:
+ * - Detected when currentProcedureIndex > last procedure
+ * - Stops session polling
+ * - Waits for experiment_completed SSE event
+ * - Shows thank you message
+ * - Auto-closes window (with fallback)
+ * 
+ * State Restoration:
+ * - Occurs when returning to existing session
+ * - Restores current procedure from server
+ * - Shows green restoration notice
+ * - Allows continuing from where participant left off
+ * 
+ * @window_management
+ * - beforeunload warning: "Progress saved, can return"
+ * - Auto-close on completion (2-second delay)
+ * - Fallback manual close instruction
+ * - Separate consent window (mode=consent)
+ * 
+ * @notes
+ * - Session ID format: {experimentId}_{timestamp}_{random}
+ * - Consent can be standalone (mode=consent) or part of experiment
+ * - Participant registration required before procedure execution
+ * - PRS/Main Task/VR Room Task delegated to experimenter control
+ * - Audio test can be triggered mid-experiment via SSE
+ * - Form state persisted across procedure changes
+ * - Email confirmation prevents typos in contact info
+ * - PID and SONA class are optional fields
+ * - Procedure components receive ref for custom completion handlers
+ * - Platform name passed to PsychoPyTransitionComponent from config
+ * - Session polling stops when experiment complete to prevent unnecessary requests
+ * - currentProcedureIndex uses ref to avoid stale closure in SSE callback
+ */
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './SubjectInterface.css';
 import { startRecording, setEventMarker } from './utils/helpers';
