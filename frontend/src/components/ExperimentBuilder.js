@@ -1010,7 +1010,13 @@ function ExperimentCanvas({
         const draggedItem = newProcedures[dragIndex];
         newProcedures.splice(dragIndex, 1);
         newProcedures.splice(actualDropIndex, 0, draggedItem);
-        setSelectedProcedures(newProcedures);
+
+        const updatedProcedures = newProcedures.map((proc, index) => ({
+          ...proc,
+          position: index
+        }));
+
+        setSelectedProcedures(updatedProcedures);
       }
     } else if (newProcedureData) {
       try {
@@ -1037,7 +1043,12 @@ function ExperimentCanvas({
           const actualDropIndex = Math.max(1, dropIndex);
           const newProcedures = [...selectedProcedures];
           newProcedures.splice(actualDropIndex, 0, newProcedure);
-          setSelectedProcedures(newProcedures);
+          const updatedProcedures = newProcedures.map((proc, index) => ({
+            ...proc,
+            position: index
+          }));
+          
+          setSelectedProcedures(updatedProcedures);
         }
       } catch (error) {
         console.log('Error parsing dropped procedure data:', error);
@@ -1534,7 +1545,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
     
     return initial;
   });
-  
+
   const handleInputChange = (key, val) => {
     const newData = { ...formData, [key]: val };
     setFormData(newData);
