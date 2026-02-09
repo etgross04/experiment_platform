@@ -1026,6 +1026,7 @@ function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, current
             <div className="prs-panel-section">
               <h4>PRS Task Control</h4>
               <PRSComponent
+                key={currentProcedure?.instanceId}
                 questionSet={getQuestionSet()}
                 procedure={currentProcedure}
                 prsSequenceNumber={getPRSSequenceNumber(currentProcedureIndex, experimentData)}
@@ -1041,6 +1042,7 @@ function ToolPanel({ isOpen, onToggle, currentProcedure, experimentData, current
             <div className="main-task-panel-section">
               <h4>Main Task Control</h4>
               <MainTaskComponent
+                key={currentProcedure?.instanceId}
                 questionSet={getQuestionSet()}
                 procedure={currentProcedure}
                 sessionId={sessionId}
