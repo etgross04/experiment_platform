@@ -1524,7 +1524,17 @@ function AudioFileSelector({ audioSetName, selectedFile, onChange }) {
 }
 
 function WizardStepContent({ stepId, procedureId, value, configuration, onChange }) {
-  const [formData, setFormData] = useState(value || {});
+    const [formData, setFormData] = useState(() => {
+    const initial = value || {};
+    
+    // Set default duration for stressor if not already set
+    if (stepId === 'duration' && procedureId === 'stressor' && !initial.duration) {
+      initial.duration = '5';
+    }
+    
+    return initial;
+  });
+  
   const handleInputChange = (key, val) => {
     const newData = { ...formData, [key]: val };
     setFormData(newData);

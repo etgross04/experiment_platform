@@ -773,6 +773,7 @@ function SubjectInterface() {
         <div className="procedure-content">
           {ProcedureComponent ? (
             <ProcedureComponent
+              key={currentProcedure?.instanceId}
               procedure={{
                 ...currentProcedure,
                 platform: currentProcedure.configuration?.['psychopy-setup']?.platform || 
