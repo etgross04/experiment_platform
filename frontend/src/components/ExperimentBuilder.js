@@ -1286,68 +1286,72 @@ function ExperimentCanvas({
   };
 
   const handleProcedureDrop = (e, dropIndex) => {
-    e.preventDefault();
-    e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const dragIndexData = e.dataTransfer.getData('text/html'); 
+  const newProcedureData = e.dataTransfer.getData('text/plain');
+  
+  if (dragIndexData && draggedIndex !== null) {
+  const dragIndex = parseInt(dragIndexData);
+  
+  // Prevent moving to positions 0-1 (data collection and consent positions)
+  const actualDropIndex = Math.max(2, dropIndex);
+  
+  if (dragIndex !== actualDropIndex && dragIndex >= 2) {
+    const newProcedures = [...selectedProcedures];
+    const draggedItem = newProcedures[dragIndex];
+    newProcedures.splice(dragIndex, 1);
+    newProcedures.splice(actualDropIndex, 0, draggedItem);
     
-    const dragIndexData = e.dataTransfer.getData('text/html'); 
-    const newProcedureData = e.dataTransfer.getData('text/plain');
+    // Update positions to match new array order
+    const updatedProcedures = newProcedures.map((proc, index) => ({
+      ...proc,
+      position: index
+    }));
     
-    if (dragIndexData && draggedIndex !== null) {
-      const dragIndex = parseInt(dragIndexData);
+    setSelectedProcedures(updatedProcedures);
+  }
+  } else if (newProcedureData) {
+    try {
+      const dragData = JSON.parse(newProcedureData);
       
-      // Prevent moving to positions 0-1 (data collection and consent positions)
-      const actualDropIndex = Math.max(2, dropIndex);
-      
-      if (dragIndex !== actualDropIndex && dragIndex !== 0 && dragIndex !== 1) { // Can't move data collection or consent
+      if (dragData.type === 'paradigm') {
+        const dataCollection = selectedProcedures[0];
+        const consentForm = selectedProcedures[1];
+        const paradigmProcedures = dragData.paradigm.procedures
+          .filter(procRef => procRef.id !== 'consent' && procRef.id !== 'data-collection')
+          .map((procRef, index) => {
+            const baseProcedure = config.procedures[procRef.id];
+            return createFullProcedure(baseProcedure, {
+              ...procRef,
+              suffix: `_${index}`,
+              position: index + 2
+            });
+          });
+        setSelectedProcedures([dataCollection, consentForm, ...paradigmProcedures]);
+      } else if (!dragData.instanceId && dragData.id !== 'consent' && dragData.id !== 'data-collection') {
+        const actualDropIndex = Math.max(2, dropIndex);
+        const newProcedure = createFullProcedure(dragData, {
+          position: actualDropIndex
+        });
+        
         const newProcedures = [...selectedProcedures];
-        const draggedItem = newProcedures[dragIndex];
-        newProcedures.splice(dragIndex, 1);
-        newProcedures.splice(actualDropIndex, 0, draggedItem);
-
+        newProcedures.splice(actualDropIndex, 0, newProcedure);
+        
+        // Update positions for all procedures
         const updatedProcedures = newProcedures.map((proc, index) => ({
           ...proc,
           position: index
         }));
-
+        
         setSelectedProcedures(updatedProcedures);
       }
-    } else if (newProcedureData) {
-      try {
-        const dragData = JSON.parse(newProcedureData);
-        
-        if (dragData.type === 'paradigm') {
-          // Keep consent form, replace everything else with paradigm
-          const consentForm = selectedProcedures[0];
-          const paradigmProcedures = dragData.paradigm.procedures
-            .filter(procRef => procRef.id !== 'consent')
-            .map((procRef, index) => {
-              const baseProcedure = config.procedures[procRef.id];
-              return createFullProcedure(baseProcedure, {
-                ...procRef,
-                suffix: `_${index}`,
-                position: index + 1
-              });
-            });
-          setSelectedProcedures([consentForm, ...paradigmProcedures]);
-        } else if (!dragData.instanceId && dragData.id !== 'consent') {
-          const newProcedure = createFullProcedure(dragData, {
-            position: selectedProcedures.length
-          });
-          const actualDropIndex = Math.max(1, dropIndex);
-          const newProcedures = [...selectedProcedures];
-          newProcedures.splice(actualDropIndex, 0, newProcedure);
-          const updatedProcedures = newProcedures.map((proc, index) => ({
-            ...proc,
-            position: index
-          }));
-          
-          setSelectedProcedures(updatedProcedures);
-        }
-      } catch (error) {
-        console.log('Error parsing dropped procedure data:', error);
-      }
+    } catch (error) {
+      console.log('Error parsing dropped procedure data:', error);
     }
-  };
+  }
+};
 
   const removeProcedure = (instanceId, index) => {
     // Prevent removing data collection (index 0) and consent form (index 1)
@@ -1373,80 +1377,89 @@ function ExperimentCanvas({
   // };
 
   const saveExperiment = async () => {
-    if (!experimentName.trim()) {
-      alert('Please enter an experiment name');
-      return;
-    }
-    if (selectedProcedures.length === 0) {
-      alert('Please add at least one procedure to your experiment');
-      return;
-    }
+  if (!experimentName.trim()) {
+    alert('Please enter an experiment name');
+    return;
+  }
+  if (selectedProcedures.length === 0) {
+    alert('Please add at least one procedure to your experiment');
+    return;
+  }
 
-    // If in edit mode, show confirmation
-    if (isEditMode) {
-      const confirmed = window.confirm(
-        `This will overwrite the existing experiment "${experimentName}".\n\nAre you sure you want to save these changes?`
-      );
-      if (!confirmed) return;
-    }
+  // If in edit mode, show confirmation
+  if (isEditMode) {
+    const confirmed = window.confirm(
+      `This will overwrite the existing experiment "${experimentName}".\n\nAre you sure you want to save these changes?`
+    );
+    if (!confirmed) return;
+  }
 
-    // Extract data collection methods from the data-collection procedure
-    const dataCollectionProc = selectedProcedures.find(proc => proc.id === 'data-collection');
-    const collectionMethods = dataCollectionProc?.configuration?.['collection-methods'] || {
-      polar_hr: false,
-      vernier_resp: false,
-      emotibit: false,
-      audio_ser: false
-    };
-
-    const experimentData = {
-      id: isEditMode ? editingExperimentId : undefined,
-      name: experimentName,
-      procedures: selectedProcedures,
-      dataCollectionMethods: collectionMethods,
-      created_at: new Date().toISOString(),
-      estimated_duration: selectedProcedures.reduce((total, proc) => total + (proc.customDuration || proc.duration), 0)
-    };
-
-    try {
-      const endpoint = isEditMode 
-        ? `/api/experiments/${editingExperimentId}` 
-        : '/api/experiments';
-      
-      const response = await fetch(endpoint, {
-        method: isEditMode ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(experimentData)
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        alert(isEditMode 
-          ? 'Experiment updated successfully! 🎉' 
-          : 'Experiment saved successfully! 🎉'
-        );
-        console.log('Experiment saved with ID:', result.id);
-        
-        // If we were in edit mode, exit edit mode after successful save
-        if (isEditMode) {
-          setIsEditMode(false);
-          setEditingExperimentId(null);
-          // Clear URL parameters
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      } else {
-        throw new Error(result.error || 'Failed to save experiment');
-      }
-    } catch (error) {
-      console.error('Error saving experiment:', error);
-      alert(`Error saving experiment: ${error.message}`);
-    }
+  // Extract data collection methods from the data-collection procedure
+  const dataCollectionProc = selectedProcedures.find(proc => proc.id === 'data-collection');
+  const collectionMethods = dataCollectionProc?.configuration?.['collection-methods'] || {
+    polar_hr: false,
+    vernier_resp: false,
+    emotibit: false,
+    audio_ser: false
   };
 
-  const totalDuration = selectedProcedures.reduce((sum, p) => sum + (p.customDuration || p.duration), 0);
+  const proceduresWithCorrectPositions = selectedProcedures.map((proc, index) => ({
+    ...proc,
+    position: index
+  }));
+
+  const experimentData = {
+    id: isEditMode ? editingExperimentId : undefined,
+    name: experimentName,
+    procedures: proceduresWithCorrectPositions,  // ← FIXED, use the variable with correct positions
+    dataCollectionMethods: collectionMethods,
+    created_at: new Date().toISOString(),
+    estimated_duration: selectedProcedures.reduce((total, proc) => total + (proc.customDuration || proc.duration), 0)
+  };
+
+  try {
+    const endpoint = isEditMode 
+      ? `/api/experiments/${editingExperimentId}` 
+      : '/api/experiments';
+    
+    const response = await fetch(endpoint, {
+      method: isEditMode ? 'PUT' : 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(experimentData)
+    });
+
+    const result = await response.json();
+
+    if (response.ok && result.success) {
+      alert(isEditMode 
+        ? 'Experiment updated successfully! 🎉' 
+        : 'Experiment saved successfully! 🎉'
+      );
+      console.log('Experiment saved with ID:', result.id);
+      
+      // If we were in edit mode, exit edit mode after successful save
+      if (isEditMode) {
+        setIsEditMode(false);
+        setEditingExperimentId(null);
+        // Clear URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } else {
+      throw new Error(result.error || 'Failed to save experiment');
+    }
+  } catch (error) {
+    console.error('Error saving experiment:', error);
+    alert(`Error saving experiment: ${error.message}`);
+  }
+};
+
+  const totalDuration = selectedProcedures.reduce((sum, p) => {
+    if (!p) return sum; // Skip undefined procedures (safety check)
+    const duration = p.customDuration || p.duration || 0;
+    return sum + duration;
+  }, 0);
 
   return (
     <div className="design-canvas">
@@ -3997,14 +4010,16 @@ function ExperimentBuilder({ onBack }) {
       prev.map(p => {
         if (p.instanceId === currentWizardProcedure.instanceId) {
           // Extract duration from configuration if present
-          const customDuration = configuration.duration?.duration 
-            ? parseInt(configuration.duration.duration) 
-            : p.customDuration || p.duration;
+          let customDuration = p.customDuration || p.duration;
+          
+          if (configuration.duration && configuration.duration.duration) {
+            customDuration = parseInt(configuration.duration.duration);
+          }
           
           return { 
             ...p, 
             configuration,
-            customDuration,  // Update customDuration
+            customDuration,
             wizardData: {
               ...p.wizardData,
               rawConfiguration: configuration
