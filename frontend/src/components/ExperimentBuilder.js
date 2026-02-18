@@ -1411,7 +1411,7 @@ function ExperimentCanvas({
   const experimentData = {
     id: isEditMode ? editingExperimentId : undefined,
     name: experimentName,
-    procedures: proceduresWithCorrectPositions,  // ← FIXED, use the variable with correct positions
+    procedures: proceduresWithCorrectPositions, 
     dataCollectionMethods: collectionMethods,
     created_at: new Date().toISOString(),
     estimated_duration: selectedProcedures.reduce((total, proc) => total + (proc.customDuration || proc.duration), 0)
@@ -1443,7 +1443,7 @@ function ExperimentCanvas({
       if (isEditMode) {
         setIsEditMode(false);
         setEditingExperimentId(null);
-        // Clear URL parameters
+       
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     } else {
@@ -1857,6 +1857,10 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
     setFormData(newData);
     onChange(newData);
   };
+
+  useEffect(() => {
+    setFormData(value || {});
+  }, [stepId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validateGoogleFormUrl = (url) => {
     if (!url) return false;
