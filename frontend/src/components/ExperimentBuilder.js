@@ -1841,6 +1841,8 @@ function AudioFileSelector({ audioSetName, selectedFile, onChange }) {
 }
 
 function WizardStepContent({ stepId, procedureId, value, configuration, onChange }) {
+    const [showAddAudioPanel, setShowAddAudioPanel] = useState(false);
+    const [additionalFilesCount, setAdditionalFilesCount] = useState(0);
     const [formData, setFormData] = useState(() => {
     const initial = value || {};
     
@@ -2409,7 +2411,7 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
                     ✓ Audio Already Uploaded
                   </p>
                   <p style={{ margin: 0, fontSize: '0.875rem', color: '#065f46' }}>
-                    Audio set "<strong>{formData.customAudioSetName || formData.audioSet}</strong>" with {formData.uploadedFileCount} files is already available.
+                    Audio set "<strong>{formData.customAudioSetName || formData.audioSet}</strong>" with {(formData.uploadedFileCount || 0) + additionalFilesCount} files is already available.
                     {formData.configUploaded && ' Configuration file was also uploaded.'}
                   </p>
                 </div>
@@ -2629,6 +2631,83 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
                   </div>
                 </div>
               </>
+            )}
+
+            {(formData.filesUploaded || (existingVRRoomTask?.configuration?.['audio-set-selection']?.filesUploaded)) && (
+              <div style={{ marginTop: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddAudioPanel(prev => !prev)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: '#f0f9ff',
+                    color: '#0369a1',
+                    border: '1px solid #0ea5e9',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  {showAddAudioPanel ? 'Cancel' : '+ Add Audio Files'}
+                </button>
+
+                {showAddAudioPanel && (
+                  <div style={{
+                    marginTop: '0.75rem',
+                    padding: '1rem',
+                    background: '#f0f9ff',
+                    border: '1px solid #0ea5e9',
+                    borderRadius: '0.5rem'
+                  }}>
+                    <h4 style={{ marginTop: 0 }}>Add Audio Files</h4>
+                    <p style={{ fontSize: '0.875rem', color: '#0369a1', marginBottom: '1rem' }}>
+                      Select additional files to add to the audio set. Existing files with the same name will be overwritten.
+                    </p>
+                    <input
+                      type="file"
+                      accept=".mp3,.wav"
+                      multiple
+                      style={{ width: '100%', marginBottom: '0.75rem' }}
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files);
+                        if (files.length === 0) return;
+
+                        const audioSetName = formData.customAudioSetName || formData.audioSet;
+                        if (!audioSetName) {
+                          alert('No audio set found. Please ensure audio has been configured first.');
+                          e.target.value = '';
+                          return;
+                        }
+
+                        const formDataObj = new FormData();
+                        formDataObj.append('audioSetName', audioSetName);
+                        files.forEach(file => formDataObj.append('audioFiles', file));
+
+                        try {
+                          const response = await fetch('/api/upload-vr-room-audio', {
+                            method: 'POST',
+                            body: formDataObj
+                          });
+                          const result = await response.json();
+                          if (response.ok && result.success) {
+                            alert(`Successfully added ${files.length} file(s) to "${audioSetName}"`);
+                            setAdditionalFilesCount(prev => prev + files.length);
+                            setShowAddAudioPanel(false);
+                          } else {
+                            alert(`Upload failed: ${result.error || 'Unknown error'}`);
+                          }
+                        } catch (error) {
+                          console.error('Upload error:', error);
+                          alert('Error uploading files. Please try again.');
+                        }
+
+                        e.target.value = '';
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
             )}
           </div>
         );
