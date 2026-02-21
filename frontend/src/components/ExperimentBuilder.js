@@ -1440,12 +1440,12 @@ function ExperimentCanvas({
       console.log('Experiment saved with ID:', result.id);
       
       // If we were in edit mode, exit edit mode after successful save
-      if (isEditMode) {
-        setIsEditMode(false);
-        setEditingExperimentId(null);
+      // if (isEditMode) {
+      //   setIsEditMode(false);
+      //   setEditingExperimentId(null);
        
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
+      //   window.history.replaceState({}, document.title, window.location.pathname);
+      // }
     } else {
       throw new Error(result.error || 'Failed to save experiment');
     }
@@ -4089,23 +4089,21 @@ function ExperimentBuilder({ onBack }) {
     };
 
   const handleWizardSave = (configuration) => {
+    const { _allProcedures, ...cleanConfiguration } = configuration;  // strip it
     setSelectedProcedures(prev =>
       prev.map(p => {
         if (p.instanceId === currentWizardProcedure.instanceId) {
-          // Extract duration from configuration if present
           let customDuration = p.customDuration || p.duration;
-          
-          if (configuration.duration && configuration.duration.duration) {
-            customDuration = parseInt(configuration.duration.duration);
+          if (cleanConfiguration.duration && cleanConfiguration.duration.duration) {
+            customDuration = parseInt(cleanConfiguration.duration.duration);
           }
-          
           return { 
             ...p, 
-            configuration,
+            configuration: cleanConfiguration,
             customDuration,
             wizardData: {
               ...p.wizardData,
-              rawConfiguration: configuration
+              rawConfiguration: cleanConfiguration
             }
           };
         }
