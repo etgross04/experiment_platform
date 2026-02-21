@@ -2006,6 +2006,17 @@ def list_experiments():
         print(f"Error loading experiments: {e}")
         return jsonify([])
 
+def strip_internal_fields(procedures):
+    """Remove UI-only fields that should never be persisted."""
+    for proc in procedures:
+        config = proc.get('configuration', {})
+        config.pop('_allProcedures', None)
+        wizard = proc.get('wizardData', {})
+        raw = wizard.get('rawConfiguration', {})
+        if isinstance(raw, dict):
+            raw.pop('_allProcedures', None)
+    return procedures
+
 @app.route('/api/experiments/<experiment_id>/run', methods=['POST'])
 def run_experiment(experiment_id):
     try:
@@ -2016,6 +2027,8 @@ def run_experiment(experiment_id):
         
         with open(template_path, 'r') as f:
             template = json.load(f)
+        
+        template['procedures'] = strip_internal_fields(template.get('procedures', []))
         
         session_timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         session_id = f"{experiment_id}_{session_timestamp}"
@@ -2348,8 +2361,11 @@ def process_procedure_for_psychopy(proc_data):
     """
     Process procedure data for external software. Function needs renaming.
     """
-    # Extract platform from configuration if available, otherwise use top-level
-    config_platform = proc_data.get('configuration', {}).get('psychopy-setup', {}).get('platform')
+    # Strip internal UI-only fields before saving
+    config = proc_data.get('configuration', {})
+    config.pop('_allProcedures', None)
+    
+    config_platform = config.get('psychopy-setup', {}).get('platform')
     top_level_platform = proc_data.get('platform')
     
     # Prioritize configuration platform over top-level
