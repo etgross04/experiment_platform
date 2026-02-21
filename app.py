@@ -2540,9 +2540,9 @@ def import_emotibit_csv() -> Response:
             continue
         
         if i == 0:
-            new_filename = f"{event_manager.time_started}_{subject_manager.subject_id}_emotibit_ground_truth.csv"
+            new_filename = f"{event_manager.time_started_iso}_{subject_manager.subject_id}_emotibit_ground_truth.csv"
         else:
-            new_filename = f"{event_manager.time_started}_{subject_manager.subject_id}_emotibit_ground_truth_{i+1}.csv"
+            new_filename = f"{event_manager.time_started_iso}_{subject_manager.subject_id}_emotibit_ground_truth_{i+1}.csv"
         
         file_path = os.path.join(event_manager.data_folder, new_filename)
         
