@@ -2377,7 +2377,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
 
         // Auto-populate if audio exists from another procedure
 // Only populate if we haven't already set audioSet AND files haven't been uploaded in THIS wizard instance
-if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
+if (existingVRRoomTask && !value?.audioSet && !value?.customAudioSetName) {
   const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
   const updatedData = {
     ...formData,
@@ -2771,10 +2771,10 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
           : []; // Empty for manual building
         
         // Initialize form data with config if not already set
-        if (!formData.editableConfig) {
+        if (!formData.editableConfig || (formData.editableConfig.steps && formData.editableConfig.steps.length === 0 && hasUploadedConfig)) {
           handleInputChange('editableConfig', {
-            steps: hasUploadedConfig ? [...allSteps] : [],
-            relevantIndices: hasUploadedConfig ? relevantStepIndices : []
+            steps: hasUploadedConfig ? [...allSteps] : (formData.editableConfig?.steps || []),
+            relevantIndices: hasUploadedConfig ? relevantStepIndices : (formData.editableConfig?.relevantIndices || [])
           });
         }
         
