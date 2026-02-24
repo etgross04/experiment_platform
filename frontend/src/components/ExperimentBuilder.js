@@ -2405,22 +2405,22 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
 
         // Auto-populate if audio exists from another procedure
 // Only populate if we haven't already set audioSet AND files haven't been uploaded in THIS wizard instance
-if (existingVRRoomTask && !value?.audioSet && !value?.customAudioSetName) {
-  const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
-  const updatedData = {
-    ...formData,
-    audioSet: existingConfig.audioSet,
-    customAudioSetName: existingConfig.audioSet,
-    filesUploaded: true,
-    uploadedFileCount: existingConfig.uploadedFileCount || 0,
-    configUploaded: existingConfig.configUploaded || false
-  };
-  if (existingConfig.sequenceConfig) {
-    updatedData.sequenceConfig = existingConfig.sequenceConfig;
-  }
-  setFormData(updatedData);
-  onChange(updatedData);
-}
+// if (existingVRRoomTask && !value?.audioSet && !value?.customAudioSetName) {
+//   const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
+//   const updatedData = {
+//     ...formData,
+//     audioSet: existingConfig.audioSet,
+//     customAudioSetName: existingConfig.audioSet,
+//     filesUploaded: true,
+//     uploadedFileCount: existingConfig.uploadedFileCount || 0,
+//     configUploaded: existingConfig.configUploaded || false
+//   };
+//   if (existingConfig.sequenceConfig) {
+//     updatedData.sequenceConfig = existingConfig.sequenceConfig;
+//   }
+//   setFormData(updatedData);
+//   onChange(updatedData);
+// }
 
         const audioAlreadyUploaded = existingVRRoomTask && existingVRRoomTask.configuration?.['audio-set-selection']?.filesUploaded;
 
