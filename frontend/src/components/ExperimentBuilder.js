@@ -1881,6 +1881,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
             configUploaded: existingConfig.configUploaded || false
           };
           setFormData(inherited);
+          onChange(inherited);
         }
       }
     }
