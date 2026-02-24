@@ -1862,6 +1862,34 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
 
   useEffect(() => {
     setFormData(value || {});
+
+    if (stepId === 'sequence-editor' && procedureId === 'vr-room-task') {
+      const audioSetConfig = configuration['audio-set-selection'];
+      const hasUploadedConfig = audioSetConfig?.configUploaded && audioSetConfig?.sequenceConfig;
+      const fullConfig = hasUploadedConfig ? audioSetConfig.sequenceConfig : { steps: [] };
+      const allSteps = fullConfig.steps || [];
+      const sessionType = configuration['session-type-selection']?.sessionType || 'practice';
+
+      const relevantStepIndices = hasUploadedConfig
+        ? allSteps
+            .map((step, index) => ({ step, originalIndex: index }))
+            .filter(({ step }) => step.sessionTypes && step.sessionTypes.includes(sessionType))
+            .map(({ originalIndex }) => originalIndex)
+        : [];
+
+      const currentEditableConfig = value?.editableConfig;
+      const hasExistingSteps = currentEditableConfig?.steps && currentEditableConfig.steps.length > 0;
+
+      if (!currentEditableConfig || (hasUploadedConfig && !hasExistingSteps)) {
+        onChange({
+          ...value,
+          editableConfig: {
+            steps: hasUploadedConfig ? [...allSteps] : [],
+            relevantIndices: hasUploadedConfig ? relevantStepIndices : []
+          }
+        });
+      }
+    }
   }, [stepId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validateGoogleFormUrl = (url) => {
@@ -2763,20 +2791,21 @@ if (existingVRRoomTask && !value?.audioSet && !value?.customAudioSetName) {
         
         // Filter steps based on session type if we have uploaded config
         const allSteps = fullConfig.steps || [];
-        const relevantStepIndices = hasUploadedConfig 
-          ? allSteps
-              .map((step, index) => ({ step, originalIndex: index }))
-              .filter(({ step }) => step.sessionTypes && step.sessionTypes.includes(sessionType))
-              .map(({ originalIndex }) => originalIndex)
-          : []; // Empty for manual building
+         // eslint-disable-next-line no-unused-vars
+      const relevantStepIndices = hasUploadedConfig
+        ? allSteps
+            .map((step, index) => ({ step, originalIndex: index }))
+            .filter(({ step }) => step.sessionTypes && step.sessionTypes.includes(sessionType))
+            .map(({ originalIndex }) => originalIndex)
+        : [];
         
         // Initialize form data with config if not already set
-        if (!formData.editableConfig || (formData.editableConfig.steps && formData.editableConfig.steps.length === 0 && hasUploadedConfig)) {
-          handleInputChange('editableConfig', {
-            steps: hasUploadedConfig ? [...allSteps] : (formData.editableConfig?.steps || []),
-            relevantIndices: hasUploadedConfig ? relevantStepIndices : (formData.editableConfig?.relevantIndices || [])
-          });
-        }
+        // if (!formData.editableConfig || (formData.editableConfig.steps && formData.editableConfig.steps.length === 0 && hasUploadedConfig)) {
+        //   handleInputChange('editableConfig', {
+        //     steps: hasUploadedConfig ? [...allSteps] : (formData.editableConfig?.steps || []),
+        //     relevantIndices: hasUploadedConfig ? relevantStepIndices : (formData.editableConfig?.relevantIndices || [])
+        //   });
+        // }
         
         const editableSteps = formData.editableConfig?.steps || [];
         const relevantIndices = formData.editableConfig?.relevantIndices || [];
