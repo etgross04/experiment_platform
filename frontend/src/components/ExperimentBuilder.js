@@ -3134,7 +3134,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                             Audio File
                           </label>
                           <AudioFileSelector
-                            audioSetName={audioSetConfig?.customAudioSetName || audioSetConfig?.audioSet}
+                             audioSetName={audioSetConfig?.customAudioSetName}
                             selectedFile={step.file || ''}
                             onChange={(file) => updateStep(originalIndex, 'file', file)}
                           />
