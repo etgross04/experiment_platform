@@ -1862,6 +1862,28 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
 
   useEffect(() => {
     setFormData(value || {});
+    if (stepId === 'audio-set-selection' && procedureId === 'vr-room-task') {
+      const currentValue = value || {};
+      if (!currentValue.audioSet && !currentValue.customAudioSetName) {
+        const allProcedures = configuration?._allProcedures || [];
+        const existingVRRoomTask = allProcedures.find(proc =>
+          proc.id === 'vr-room-task' &&
+          proc.configuration?.['audio-set-selection']?.audioSet
+        );
+        if (existingVRRoomTask) {
+          const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
+          const inherited = {
+            ...currentValue,
+            audioSet: existingConfig.audioSet,
+            customAudioSetName: existingConfig.customAudioSetName || existingConfig.audioSet,
+            filesUploaded: true,
+            uploadedFileCount: existingConfig.uploadedFileCount || 0,
+            configUploaded: existingConfig.configUploaded || false
+          };
+          setFormData(inherited);
+        }
+      }
+    }
 
     if (stepId === 'sequence-editor' && procedureId === 'vr-room-task') {
       const audioSetConfig = configuration['audio-set-selection'];
@@ -2439,7 +2461,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                     ✓ Audio Already Uploaded
                   </p>
                   <p style={{ margin: 0, fontSize: '0.875rem', color: '#065f46' }}>
-                    Audio set "<strong>{formData.customAudioSetName || formData.audioSet}</strong>" with {(formData.uploadedFileCount || 0) + additionalFilesCount} files is already available.
+                    Audio set "<strong>{formData.customAudioSetName || formData.audioSet || existingVRRoomTask?.configuration?.['audio-set-selection']?.audioSet}</strong>" with {(formData.uploadedFileCount || existingVRRoomTask?.configuration?.['audio-set-selection']?.uploadedFileCount || 0) + additionalFilesCount} files is already available.
                     {formData.configUploaded && ' Configuration file was also uploaded.'}
                   </p>
                 </div>
@@ -2701,9 +2723,11 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                         const files = Array.from(e.target.files);
                         if (files.length === 0) return;
 
-                        const audioSetName = formData.customAudioSetName || formData.audioSet;
+                        const audioSetName = formData.customAudioSetName || formData.audioSet || 
+                          (existingVRRoomTask?.configuration?.['audio-set-selection']?.customAudioSetName) ||
+                          (existingVRRoomTask?.configuration?.['audio-set-selection']?.audioSet);
                         if (!audioSetName) {
-                          alert('No audio set found. Please ensure audio has been configured first.');
+                          alert('No Audio Set Found. Please ensure audio has been configured first.');
                           e.target.value = '';
                           return;
                         }
@@ -3110,7 +3134,7 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
                             Audio File
                           </label>
                           <AudioFileSelector
-                            audioSetName={audioSetConfig?.customAudioSetName}
+                            audioSetName={audioSetConfig?.customAudioSetName || audioSetConfig?.audioSet}
                             selectedFile={step.file || ''}
                             onChange={(file) => updateStep(originalIndex, 'file', file)}
                           />

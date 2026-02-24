@@ -1012,6 +1012,15 @@ lsl_manager = None
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['DEBUG'] = True
 
+import logging
+log = logging.getLogger('werkzeug')
+
+class HeartbeatFilter(logging.Filter):
+    def filter(self, record):
+        return 'heartbeat' not in record.getMessage()
+
+log.addFilter(HeartbeatFilter())
+
 CORS(app, resources={
     r"/api/*": {
         "origins": "*",
@@ -4130,7 +4139,7 @@ def check_stale_sessions():
                         
                         if heartbeat_data['missed_beats'] >= HEARTBEAT_GRACE_ATTEMPTS:
                             stale_sessions.append(session_id)
-                            print(f"Session {session_id} stale: {time_since_last:.1f}s since last heartbeat ({heartbeat_data['missed_beats']} missed)")
+                            # print(f"Session {session_id} stale: {time_since_last:.1f}s since last heartbeat ({heartbeat_data['missed_beats']} missed)")
                     else:
                         heartbeat_data['missed_beats'] = 0
             
