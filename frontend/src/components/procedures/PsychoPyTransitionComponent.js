@@ -19,7 +19,27 @@ import './ProcedureComponents.css';
 
 function PsychoPyTransitionComponent({ procedure, sessionId }) {
   const [taskState, setTaskState] = useState('instructions');
-  const startPsychoPyTask = () => {
+  const [launching, setLaunching] = useState(false);
+
+  const startPsychoPyTask = async () => {
+    setLaunching(true);
+    try {
+      const response = await fetch('/api/launch-psychopy-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          task_id: procedure.id,
+        })
+      });
+      const result = await response.json();
+      if (!result.success) {
+        console.error('Failed to launch PsychoPy task:', result.error);
+      }
+    } catch (error) {
+      console.error('Error launching PsychoPy task:', error);
+    }
+    setLaunching(false);
     setTaskState('psychopy');
   };
 
@@ -65,8 +85,8 @@ function PsychoPyTransitionComponent({ procedure, sessionId }) {
           </div>
         </div>
         
-        <button onClick={startPsychoPyTask} className="start-task-btn">
-          Ready to Start {getTaskName()}
+        <button onClick={startPsychoPyTask} className="start-task-btn" disabled={launching}>
+          {launching ? 'Launching...' : `Ready to Start ${getTaskName()}`}
         </button>
       </div>
     );

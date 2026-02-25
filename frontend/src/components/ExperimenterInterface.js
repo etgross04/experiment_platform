@@ -2382,6 +2382,7 @@ useEffect(() => {
     } catch (error) {
       console.error('Error notifying server of procedure change:', error);
     }
+
   };
 
   const handleProcedureInstructionsComplete = async () => {

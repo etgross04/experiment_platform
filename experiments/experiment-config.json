@@ -91,6 +91,14 @@
       "required": false,
       "category": "main-tasks",
       "platform": "psytoolkit"
+    },
+    "two-afc": {
+      "id": "two-afc",
+      "name": "2AFC Room Comparison",
+      "duration": 20,
+      "required": false,
+      "category": "main-tasks",
+      "platform": "psychopy"
     }
   },
   "categories": {
@@ -557,6 +565,18 @@
         "id": "psychopy-setup",
         "title": "PsychoPy Setup",
         "description": "Configure PsychoPy integration options"
+      }
+    ],
+    "two-afc": [
+      {
+        "id": "psychopy-setup",
+        "title": "PsychoPy Setup",
+        "description": "Configure PsychoPy integration for the 2AFC room comparison task"
+      },
+      {
+        "id": "task-description",
+        "title": "Task Details",
+        "description": "Review the 2AFC task parameters and image pair configuration"
       }
     ]
   }

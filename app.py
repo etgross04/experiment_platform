@@ -1025,6 +1025,63 @@ def serve_experiments(filename):
     experiments_dir = os.path.join(os.getcwd(), 'experiments')
     return send_from_directory(experiments_dir, filename)
 
+@app.route('/api/launch-psychopy-task', methods=['POST'])
+def launch_psychopy_task():
+    """Launch a PsychoPy task as a subprocess with participant/session info."""
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        task_id = data.get('task_id')
+
+        if not session_id or session_id not in ACTIVE_SESSIONS:
+            return jsonify({'success': False, 'error': 'Invalid or missing session ID'}), 400
+
+        session_data = ACTIVE_SESSIONS[session_id]
+
+        PSYCHOPY_TASKS = {
+            'two-afc': {
+                'script': os.path.join(os.getcwd(), 'psychopy_tasks', 'two_afc', 'two_afc_task.py'),
+                'cwd': os.path.join(os.getcwd(), 'psychopy_tasks', 'two_afc'),
+            }
+        }
+
+        if task_id not in PSYCHOPY_TASKS:
+            return jsonify({'success': False, 'error': f'Unknown PsychoPy task: {task_id}'}), 400
+
+        task_config = PSYCHOPY_TASKS[task_id]
+        script_path = task_config['script']
+
+        if not os.path.exists(script_path):
+            return jsonify({'success': False, 'error': f'Task script not found: {script_path}'}), 404
+
+        participant_info = session_data.get('participant_info', {})
+        participant_id = participant_info.get('pid') or participant_info.get('email', 'unknown')
+        participant_id = "".join(c for c in participant_id if c.isalnum() or c in ('_', '-')).strip() or 'unknown'
+
+        output_dir = session_data.get('subject_dir')
+
+        cmd = [
+            sys.executable,
+            script_path,
+            '--participant', participant_id,
+            '--session', session_id.split('_')[-1] if '_' in session_id else '001',
+        ]
+        if output_dir and os.path.isdir(output_dir):
+            cmd.extend(['--output-dir', output_dir])
+
+        print(f"Launching PsychoPy task: {' '.join(cmd)}")
+        process = subprocess.Popen(cmd, cwd=task_config['cwd'])
+
+        return jsonify({
+            'success': True,
+            'message': f'PsychoPy task "{task_id}" launched',
+            'pid': process.pid,
+        }), 200
+
+    except Exception as e:
+        print(f"Error launching PsychoPy task: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/launch-emotibit-osc', methods=['POST'])
 def launch_emotibit_osc():
     try:

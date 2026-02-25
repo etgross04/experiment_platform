@@ -192,5 +192,34 @@
         "content": "Example instruction 2"
       }
     ]
+  },
+  "two-afc": {
+    "title": "2AFC Room Comparison Task",
+    "steps": [
+      {
+        "id": "step1",
+        "title": "Step 1",
+        "label": "Pre-launch Setup",
+        "content": "1. Ensure PsychoPy is installed on the experiment computer (pip install psychopy)\n\n2. Verify that room images are placed in the correct directories:\n   - Practice images: psychopy_tasks/two_afc/images/practice/\n   - Experimental images: psychopy_tasks/two_afc/images/experimental/\n\n3. Verify the conditions CSV files are configured with the correct image pair filenames:\n   - psychopy_tasks/two_afc/conditions/practice_pairs.csv (6 neutral pairs)\n   - psychopy_tasks/two_afc/conditions/experimental_pairs.csv (32 experimental pairs)\n\n4. Open a terminal and navigate to the psychopy_tasks/two_afc/ directory"
+      },
+      {
+        "id": "step2",
+        "title": "Step 2",
+        "label": "Launch the Task",
+        "content": "1. When the subject's screen shows 'Ready to Start 2AFC Room Comparison', launch the PsychoPy task:\n   python two_afc_task.py\n\n2. Alternatively, pass participant info via command line to skip the dialog:\n   python two_afc_task.py --participant P001 --session 001\n\n3. The participant info dialog will appear (unless CLI args were used). Enter the participant ID and session number, then click OK\n\n4. The task will go full-screen. The subject will see the transition screen first"
+      },
+      {
+        "id": "step3",
+        "title": "Step 3",
+        "label": "During the Task",
+        "content": "1. The task runs autonomously once launched. Do not interact with the PsychoPy window\n\n2. The subject will complete:\n   - 6 practice trials (neutral images)\n   - Block 1: 32 Preference trials (mid-break after trial 16)\n   - Block 2: 32 Spaciousness trials (mid-break after trial 16)\n   - Block 3: 32 Anxiety trials (mid-break after trial 16)\n\n3. Total task time is approximately 15-20 minutes\n\n4. If the subject needs to abort, press ESCAPE at any time (partial data will be saved)\n\n5. Data is saved continuously to psychopy_tasks/two_afc/data/"
+      },
+      {
+        "id": "step4",
+        "title": "Step 4",
+        "label": "After the Task",
+        "content": "1. When the subject sees 'Choices task complete', the PsychoPy window will close after they press SPACE\n\n2. Verify the data CSV was saved in psychopy_tasks/two_afc/data/\n   - Filename format: 2afc_<participant>_<session>_<timestamp>.csv\n\n3. The subject should return to the browser window for the next procedure\n\n4. Click 'Next' on the experimenter interface to advance to the next procedure"
+      }
+    ]
   }
 }

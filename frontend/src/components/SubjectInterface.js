@@ -851,6 +851,13 @@ function SubjectInterface() {
     if (procedure.wizardData?.usePsychoPy) {
       return true;
     }
+
+    const platform = procedure.configuration?.['psychopy-setup']?.platform ||
+                     procedure.wizardData?.platform ||
+                     procedure.platform;
+    if (platform && platform.toLowerCase() === 'psychopy') {
+      return true;
+    }
     
     return false;
   };
