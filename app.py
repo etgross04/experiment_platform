@@ -1012,6 +1012,15 @@ lsl_manager = None
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['DEBUG'] = True
 
+import logging
+log = logging.getLogger('werkzeug')
+
+class HeartbeatFilter(logging.Filter):
+    def filter(self, record):
+        return 'heartbeat' not in record.getMessage()
+
+log.addFilter(HeartbeatFilter())
+
 CORS(app, resources={
     r"/api/*": {
         "origins": "*",
@@ -2063,6 +2072,17 @@ def list_experiments():
         print(f"Error loading experiments: {e}")
         return jsonify([])
 
+def strip_internal_fields(procedures):
+    """Remove UI-only fields that should never be persisted."""
+    for proc in procedures:
+        config = proc.get('configuration', {})
+        config.pop('_allProcedures', None)
+        wizard = proc.get('wizardData', {})
+        raw = wizard.get('rawConfiguration', {})
+        if isinstance(raw, dict):
+            raw.pop('_allProcedures', None)
+    return procedures
+
 @app.route('/api/experiments/<experiment_id>/run', methods=['POST'])
 def run_experiment(experiment_id):
     try:
@@ -2073,6 +2093,8 @@ def run_experiment(experiment_id):
         
         with open(template_path, 'r') as f:
             template = json.load(f)
+        
+        template['procedures'] = strip_internal_fields(template.get('procedures', []))
         
         session_timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         session_id = f"{experiment_id}_{session_timestamp}"
@@ -2405,8 +2427,11 @@ def process_procedure_for_psychopy(proc_data):
     """
     Process procedure data for external software. Function needs renaming.
     """
-    # Extract platform from configuration if available, otherwise use top-level
-    config_platform = proc_data.get('configuration', {}).get('psychopy-setup', {}).get('platform')
+    # Strip internal UI-only fields before saving
+    config = proc_data.get('configuration', {})
+    config.pop('_allProcedures', None)
+    
+    config_platform = config.get('psychopy-setup', {}).get('platform')
     top_level_platform = proc_data.get('platform')
     
     # Prioritize configuration platform over top-level
@@ -2597,9 +2622,9 @@ def import_emotibit_csv() -> Response:
             continue
         
         if i == 0:
-            new_filename = f"{event_manager.time_started}_{subject_manager.subject_id}_emotibit_ground_truth.csv"
+            new_filename = f"{event_manager.time_started_iso}_{subject_manager.subject_id}_emotibit_ground_truth.csv"
         else:
-            new_filename = f"{event_manager.time_started}_{subject_manager.subject_id}_emotibit_ground_truth_{i+1}.csv"
+            new_filename = f"{event_manager.time_started_iso}_{subject_manager.subject_id}_emotibit_ground_truth_{i+1}.csv"
         
         file_path = os.path.join(event_manager.data_folder, new_filename)
         
@@ -4171,7 +4196,7 @@ def check_stale_sessions():
                         
                         if heartbeat_data['missed_beats'] >= HEARTBEAT_GRACE_ATTEMPTS:
                             stale_sessions.append(session_id)
-                            print(f"Session {session_id} stale: {time_since_last:.1f}s since last heartbeat ({heartbeat_data['missed_beats']} missed)")
+                            # print(f"Session {session_id} stale: {time_since_last:.1f}s since last heartbeat ({heartbeat_data['missed_beats']} missed)")
                     else:
                         heartbeat_data['missed_beats'] = 0
             

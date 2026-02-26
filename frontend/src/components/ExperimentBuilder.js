@@ -1411,7 +1411,7 @@ function ExperimentCanvas({
   const experimentData = {
     id: isEditMode ? editingExperimentId : undefined,
     name: experimentName,
-    procedures: proceduresWithCorrectPositions,  // ← FIXED, use the variable with correct positions
+    procedures: proceduresWithCorrectPositions, 
     dataCollectionMethods: collectionMethods,
     created_at: new Date().toISOString(),
     estimated_duration: selectedProcedures.reduce((total, proc) => total + (proc.customDuration || proc.duration), 0)
@@ -1440,12 +1440,12 @@ function ExperimentCanvas({
       console.log('Experiment saved with ID:', result.id);
       
       // If we were in edit mode, exit edit mode after successful save
-      if (isEditMode) {
-        setIsEditMode(false);
-        setEditingExperimentId(null);
-        // Clear URL parameters
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
+      // if (isEditMode) {
+      //   setIsEditMode(false);
+      //   setEditingExperimentId(null);
+       
+      //   window.history.replaceState({}, document.title, window.location.pathname);
+      // }
     } else {
       throw new Error(result.error || 'Failed to save experiment');
     }
@@ -1841,6 +1841,8 @@ function AudioFileSelector({ audioSetName, selectedFile, onChange }) {
 }
 
 function WizardStepContent({ stepId, procedureId, value, configuration, onChange }) {
+    const [showAddAudioPanel, setShowAddAudioPanel] = useState(false);
+    const [additionalFilesCount, setAdditionalFilesCount] = useState(0);
     const [formData, setFormData] = useState(() => {
     const initial = value || {};
     
@@ -1857,6 +1859,61 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
     setFormData(newData);
     onChange(newData);
   };
+
+  useEffect(() => {
+    setFormData(value || {});
+    if (stepId === 'audio-set-selection' && procedureId === 'vr-room-task') {
+      const currentValue = value || {};
+      if (!currentValue.audioSet && !currentValue.customAudioSetName) {
+        const allProcedures = configuration?._allProcedures || [];
+        const existingVRRoomTask = allProcedures.find(proc =>
+          proc.id === 'vr-room-task' &&
+          proc.configuration?.['audio-set-selection']?.audioSet
+        );
+        if (existingVRRoomTask) {
+          const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
+          const inherited = {
+            ...currentValue,
+            audioSet: existingConfig.audioSet,
+            customAudioSetName: existingConfig.customAudioSetName || existingConfig.audioSet,
+            filesUploaded: true,
+            uploadedFileCount: existingConfig.uploadedFileCount || 0,
+            configUploaded: existingConfig.configUploaded || false
+          };
+          setFormData(inherited);
+          onChange(inherited);
+        }
+      }
+    }
+
+    if (stepId === 'sequence-editor' && procedureId === 'vr-room-task') {
+      const audioSetConfig = configuration['audio-set-selection'];
+      const hasUploadedConfig = audioSetConfig?.configUploaded && audioSetConfig?.sequenceConfig;
+      const fullConfig = hasUploadedConfig ? audioSetConfig.sequenceConfig : { steps: [] };
+      const allSteps = fullConfig.steps || [];
+      const sessionType = configuration['session-type-selection']?.sessionType || 'practice';
+
+      const relevantStepIndices = hasUploadedConfig
+        ? allSteps
+            .map((step, index) => ({ step, originalIndex: index }))
+            .filter(({ step }) => step.sessionTypes && step.sessionTypes.includes(sessionType))
+            .map(({ originalIndex }) => originalIndex)
+        : [];
+
+      const currentEditableConfig = value?.editableConfig;
+      const hasExistingSteps = currentEditableConfig?.steps && currentEditableConfig.steps.length > 0;
+
+      if (!currentEditableConfig || (hasUploadedConfig && !hasExistingSteps)) {
+        onChange({
+          ...value,
+          editableConfig: {
+            steps: hasUploadedConfig ? [...allSteps] : [],
+            relevantIndices: hasUploadedConfig ? relevantStepIndices : []
+          }
+        });
+      }
+    }
+  }, [stepId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validateGoogleFormUrl = (url) => {
     if (!url) return false;
@@ -2371,22 +2428,22 @@ function WizardStepContent({ stepId, procedureId, value, configuration, onChange
 
         // Auto-populate if audio exists from another procedure
 // Only populate if we haven't already set audioSet AND files haven't been uploaded in THIS wizard instance
-if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
-  const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
-  const updatedData = {
-    ...formData,
-    audioSet: existingConfig.audioSet,
-    customAudioSetName: existingConfig.audioSet,
-    filesUploaded: true,
-    uploadedFileCount: existingConfig.uploadedFileCount || 0,
-    configUploaded: existingConfig.configUploaded || false
-  };
-  if (existingConfig.sequenceConfig) {
-    updatedData.sequenceConfig = existingConfig.sequenceConfig;
-  }
-  setFormData(updatedData);
-  onChange(updatedData);
-}
+// if (existingVRRoomTask && !value?.audioSet && !value?.customAudioSetName) {
+//   const existingConfig = existingVRRoomTask.configuration['audio-set-selection'];
+//   const updatedData = {
+//     ...formData,
+//     audioSet: existingConfig.audioSet,
+//     customAudioSetName: existingConfig.audioSet,
+//     filesUploaded: true,
+//     uploadedFileCount: existingConfig.uploadedFileCount || 0,
+//     configUploaded: existingConfig.configUploaded || false
+//   };
+//   if (existingConfig.sequenceConfig) {
+//     updatedData.sequenceConfig = existingConfig.sequenceConfig;
+//   }
+//   setFormData(updatedData);
+//   onChange(updatedData);
+// }
 
         const audioAlreadyUploaded = existingVRRoomTask && existingVRRoomTask.configuration?.['audio-set-selection']?.filesUploaded;
 
@@ -2405,7 +2462,7 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
                     ✓ Audio Already Uploaded
                   </p>
                   <p style={{ margin: 0, fontSize: '0.875rem', color: '#065f46' }}>
-                    Audio set "<strong>{formData.customAudioSetName || formData.audioSet}</strong>" with {formData.uploadedFileCount} files is already available.
+                    Audio set "<strong>{formData.customAudioSetName || formData.audioSet || existingVRRoomTask?.configuration?.['audio-set-selection']?.audioSet}</strong>" with {(formData.uploadedFileCount || existingVRRoomTask?.configuration?.['audio-set-selection']?.uploadedFileCount || 0) + additionalFilesCount} files is already available.
                     {formData.configUploaded && ' Configuration file was also uploaded.'}
                   </p>
                 </div>
@@ -2626,6 +2683,85 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
                 </div>
               </>
             )}
+
+            {(formData.filesUploaded || (existingVRRoomTask?.configuration?.['audio-set-selection']?.filesUploaded)) && (
+              <div style={{ marginTop: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddAudioPanel(prev => !prev)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: '#f0f9ff',
+                    color: '#0369a1',
+                    border: '1px solid #0ea5e9',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  {showAddAudioPanel ? 'Cancel' : '+ Add Audio Files'}
+                </button>
+
+                {showAddAudioPanel && (
+                  <div style={{
+                    marginTop: '0.75rem',
+                    padding: '1rem',
+                    background: '#f0f9ff',
+                    border: '1px solid #0ea5e9',
+                    borderRadius: '0.5rem'
+                  }}>
+                    <h4 style={{ marginTop: 0 }}>Add Audio Files</h4>
+                    <p style={{ fontSize: '0.875rem', color: '#0369a1', marginBottom: '1rem' }}>
+                      Select additional files to add to the audio set. Existing files with the same name will be overwritten.
+                    </p>
+                    <input
+                      type="file"
+                      accept=".mp3,.wav"
+                      multiple
+                      style={{ width: '100%', marginBottom: '0.75rem' }}
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files);
+                        if (files.length === 0) return;
+
+                        const audioSetName = formData.customAudioSetName || formData.audioSet || 
+                          (existingVRRoomTask?.configuration?.['audio-set-selection']?.customAudioSetName) ||
+                          (existingVRRoomTask?.configuration?.['audio-set-selection']?.audioSet);
+                        if (!audioSetName) {
+                          alert('No Audio Set Found. Please ensure audio has been configured first.');
+                          e.target.value = '';
+                          return;
+                        }
+
+                        const formDataObj = new FormData();
+                        formDataObj.append('audioSetName', audioSetName);
+                        files.forEach(file => formDataObj.append('audioFiles', file));
+
+                        try {
+                          const response = await fetch('/api/upload-vr-room-audio', {
+                            method: 'POST',
+                            body: formDataObj
+                          });
+                          const result = await response.json();
+                          if (response.ok && result.success) {
+                            alert(`Successfully added ${files.length} file(s) to "${audioSetName}"`);
+                            setAdditionalFilesCount(prev => prev + files.length);
+                            setShowAddAudioPanel(false);
+                          } else {
+                            alert(`Upload failed: ${result.error || 'Unknown error'}`);
+                          }
+                        } catch (error) {
+                          console.error('Upload error:', error);
+                          alert('Error uploading files. Please try again.');
+                        }
+
+                        e.target.value = '';
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       }
@@ -2680,20 +2816,21 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
         
         // Filter steps based on session type if we have uploaded config
         const allSteps = fullConfig.steps || [];
-        const relevantStepIndices = hasUploadedConfig 
-          ? allSteps
-              .map((step, index) => ({ step, originalIndex: index }))
-              .filter(({ step }) => step.sessionTypes && step.sessionTypes.includes(sessionType))
-              .map(({ originalIndex }) => originalIndex)
-          : []; // Empty for manual building
+         // eslint-disable-next-line no-unused-vars
+      const relevantStepIndices = hasUploadedConfig
+        ? allSteps
+            .map((step, index) => ({ step, originalIndex: index }))
+            .filter(({ step }) => step.sessionTypes && step.sessionTypes.includes(sessionType))
+            .map(({ originalIndex }) => originalIndex)
+        : [];
         
         // Initialize form data with config if not already set
-        if (!formData.editableConfig) {
-          handleInputChange('editableConfig', {
-            steps: hasUploadedConfig ? [...allSteps] : [],
-            relevantIndices: hasUploadedConfig ? relevantStepIndices : []
-          });
-        }
+        // if (!formData.editableConfig || (formData.editableConfig.steps && formData.editableConfig.steps.length === 0 && hasUploadedConfig)) {
+        //   handleInputChange('editableConfig', {
+        //     steps: hasUploadedConfig ? [...allSteps] : (formData.editableConfig?.steps || []),
+        //     relevantIndices: hasUploadedConfig ? relevantStepIndices : (formData.editableConfig?.relevantIndices || [])
+        //   });
+        // }
         
         const editableSteps = formData.editableConfig?.steps || [];
         const relevantIndices = formData.editableConfig?.relevantIndices || [];
@@ -2998,7 +3135,7 @@ if (existingVRRoomTask && !formData.audioSet && !formData.customAudioSetName) {
                             Audio File
                           </label>
                           <AudioFileSelector
-                            audioSetName={audioSetConfig?.customAudioSetName}
+                             audioSetName={audioSetConfig?.customAudioSetName}
                             selectedFile={step.file || ''}
                             onChange={(file) => updateStep(originalIndex, 'file', file)}
                           />
@@ -4006,23 +4143,21 @@ function ExperimentBuilder({ onBack }) {
     };
 
   const handleWizardSave = (configuration) => {
+    const { _allProcedures, ...cleanConfiguration } = configuration;  // strip it
     setSelectedProcedures(prev =>
       prev.map(p => {
         if (p.instanceId === currentWizardProcedure.instanceId) {
-          // Extract duration from configuration if present
           let customDuration = p.customDuration || p.duration;
-          
-          if (configuration.duration && configuration.duration.duration) {
-            customDuration = parseInt(configuration.duration.duration);
+          if (cleanConfiguration.duration && cleanConfiguration.duration.duration) {
+            customDuration = parseInt(cleanConfiguration.duration.duration);
           }
-          
           return { 
             ...p, 
-            configuration,
+            configuration: cleanConfiguration,
             customDuration,
             wizardData: {
               ...p.wizardData,
-              rawConfiguration: configuration
+              rawConfiguration: cleanConfiguration
             }
           };
         }
