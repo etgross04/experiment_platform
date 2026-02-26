@@ -53,9 +53,9 @@ FIXATION_DURATION = 0.5       # seconds
 POST_RESPONSE_BLANK = 0.2     # brief blank after each response
 
 # Trial structure
-TRIALS_PER_BLOCK = 4          # Set to 32 for full experiment; 4 for quick testing
-MID_BREAK_AFTER_TRIAL = 2     # Set to 16 for full experiment; 2 for quick testing
-NUM_PRACTICE_TRIALS = 2       # Set to 6 for full experiment; 2 for quick testing
+TRIALS_PER_BLOCK = 32          # Set to 32 for full experiment; 4 for quick testing
+MID_BREAK_AFTER_TRIAL = 16     # Set to 16 for full experiment; 2 for quick testing
+NUM_PRACTICE_TRIALS = 6       # Set to 6 for full experiment; 2 for quick testing
 
 # Response keys
 KEY_LEFT = 'f'
