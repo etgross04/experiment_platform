@@ -78,7 +78,7 @@ BLOCKS = [
         'question': 'Which room do you prefer overall?',
         'intro_body': (
             'Choose the image you personally prefer.\n'
-            'Respond quickly based on your first impression.'
+            'Respond quickly based on your impression.'
         ),
         'end_body': 'Next, you will judge spaciousness.',
     },
@@ -93,12 +93,12 @@ BLOCKS = [
         'end_body': 'Next, you will judge anxiety.',
     },
     {
-        'name': 'Anxiety',
+        'name': 'Stimulation',
         'number': 3,
-        'question': 'Which room feels more anxiety-inducing?',
+        'question': 'Which room feels more stimulating?',
         'intro_body': (
-            'Choose the room that would make you feel more anxious\n'
-            'or uneasy if you were inside it.\n'
+            'Choose the room that would make you feel more stimulating\n'
+            'or activating.\n'
             'Respond quickly based on your impression.'
         ),
         'end_body': None,
@@ -438,13 +438,22 @@ def main():
     )
 
     # ========================================
-    # EXPERIMENTAL BLOCKS (3 blocks)
+    # EXPERIMENTAL BLOCKS (3 blocks, randomized order)
     # ========================================
-    for block in BLOCKS:
+    blocks = [b.copy() for b in BLOCKS]
+    random.shuffle(blocks)
+    for i, block in enumerate(blocks, start=1):
+        block['number'] = i
+        if i < len(blocks):
+            block['end_body'] = f"Next, you will judge {blocks[i]['name'].lower()}."
+        else:
+            block['end_body'] = None
+
+    for block in blocks:
         # --- Block intro ---
         show_text_screen(
             win, stims,
-            title=f"Block {block['number']} of {len(BLOCKS)}",
+            title=f"Block {block['number']} of {len(blocks)}",
             body=f"{block['question']}\n\n{block['intro_body']}",
             footer=f"Press SPACE to start Block {block['number']}.",
         )

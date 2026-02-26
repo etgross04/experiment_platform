@@ -29,6 +29,7 @@ static/video_files/*
 !static/video_files/.gitkeep
 psychopy_tasks/two_afc/data/*
 !psychopy_tasks/two_afc/data/.gitkeep
+psychopy_tasks/two_afc/experiments/
 psychopy_tasks/two_afc/images/practice/*
 !psychopy_tasks/two_afc/images/practice/.gitkeep
 psychopy_tasks/two_afc/images/experimental/*
